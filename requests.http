@@ -1,0 +1,87 @@
+### Variables
+@host = http://localhost:8080
+
+### CREATE - crear un producto
+POST {{host}}/api/productos
+Content-Type: application/json
+
+{
+  "idAgricultor": 1,
+  "idCategoria": 1,
+  "nombre": "Mango de azucar",
+  "descripcion": "Cosecha de la semana",
+  "precio": 4200.00,
+  "unidadMedida": "kg",
+  "stock": 50.00,
+  "fotoUrl": null
+}
+
+### LIST - listar todo el catalogo
+GET {{host}}/api/productos
+
+### LIST - filtrar por categoria y nombre
+GET {{host}}/api/productos?idCategoria=1&nombre=agua
+
+### READ - consultar un producto
+GET {{host}}/api/productos/1
+
+### UPDATE - actualizar precio y stock
+PUT {{host}}/api/productos/1
+Content-Type: application/json
+
+{
+  "idAgricultor": 1,
+  "idCategoria": 1,
+  "nombre": "Aguacate Hass",
+  "descripcion": "Cosechado en San Antonio de Prado",
+  "precio": 3500.00,
+  "unidadMedida": "kg",
+  "stock": 100.00,
+  "fotoUrl": null
+}
+
+### DELETE - baja logica del producto
+DELETE {{host}}/api/productos/3
+
+### NEGOCIO - registrar una venta (descuenta inventario y registra el pago)
+POST {{host}}/api/pedidos
+Content-Type: application/json
+
+{
+  "idCliente": 1,
+  "metodoPago": "PSE",
+  "costoEnvio": 6000.00,
+  "items": [
+    { "idProducto": 1, "cantidad": 3 },
+    { "idProducto": 2, "cantidad": 2 }
+  ]
+}
+
+### NEGOCIO - consultar el pedido registrado
+GET {{host}}/api/pedidos/1
+
+### ERROR esperado 409 - pedir mas de lo disponible
+POST {{host}}/api/pedidos
+Content-Type: application/json
+
+{
+  "idCliente": 1,
+  "metodoPago": "CONTRA_ENTREGA",
+  "costoEnvio": 0,
+  "items": [
+    { "idProducto": 1, "cantidad": 99999 }
+  ]
+}
+
+### ERROR esperado 400 - datos invalidos
+POST {{host}}/api/productos
+Content-Type: application/json
+
+{
+  "idAgricultor": 1,
+  "idCategoria": 1,
+  "nombre": "",
+  "precio": -100,
+  "unidadMedida": "kg",
+  "stock": 10
+}
