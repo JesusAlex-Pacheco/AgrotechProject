@@ -3,8 +3,11 @@ package edu.itm.agrotech.controller;
 import edu.itm.agrotech.dto.CategoriaRequest;
 import edu.itm.agrotech.dto.CategoriaResponse;
 import edu.itm.agrotech.service.CategoriaService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,6 +27,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/categorias")
+@Tag(name = "Categorias")
 public class CategoriaController {
 
     private final CategoriaService categoriaService;
@@ -32,8 +36,11 @@ public class CategoriaController {
         this.categoriaService = categoriaService;
     }
 
-    /** CREATE - POST /api/categorias */
     @PostMapping
+    @Operation(summary = "Crear una categoria", description = "El nombre no se puede repetir, sin importar mayusculas.")
+    @ApiResponse(responseCode = "201", description = "Categoria creada")
+    @ApiResponse(responseCode = "400", description = "Datos invalidos")
+    @ApiResponse(responseCode = "409", description = "Ya existe una categoria con ese nombre")
     public ResponseEntity<CategoriaResponse> crear(@Valid @RequestBody CategoriaRequest solicitud) {
         CategoriaResponse creada = CategoriaResponse.desde(categoriaService.crear(solicitud));
         return ResponseEntity
@@ -41,14 +48,18 @@ public class CategoriaController {
                 .body(creada);
     }
 
-    /** READ - GET /api/categorias/{id} */
     @GetMapping("/{id}")
-    public ResponseEntity<CategoriaResponse> consultar(@PathVariable("id") Long id) {
+    @Operation(summary = "Consultar una categoria")
+    @ApiResponse(responseCode = "200", description = "Categoria encontrada")
+    @ApiResponse(responseCode = "404", description = "La categoria no existe")
+    public ResponseEntity<CategoriaResponse> consultar(
+            @Parameter(description = "Id de la categoria", example = "1") @PathVariable("id") Long id) {
         return ResponseEntity.ok(CategoriaResponse.desde(categoriaService.consultar(id)));
     }
 
-    /** LIST - GET /api/categorias */
     @GetMapping
+    @Operation(summary = "Listar las categorias", description = "En orden alfabetico.")
+    @ApiResponse(responseCode = "200", description = "Categorias")
     public ResponseEntity<List<CategoriaResponse>> listar() {
         List<CategoriaResponse> categorias = categoriaService.listar()
                 .stream()
@@ -58,17 +69,27 @@ public class CategoriaController {
         return ResponseEntity.ok(categorias);
     }
 
-    /** UPDATE - PUT /api/categorias/{id} */
     @PutMapping("/{id}")
-    public ResponseEntity<CategoriaResponse> actualizar(@PathVariable("id") Long id,
-                                                        @Valid @RequestBody CategoriaRequest solicitud) {
+    @Operation(summary = "Renombrar una categoria")
+    @ApiResponse(responseCode = "200", description = "Categoria actualizada")
+    @ApiResponse(responseCode = "400", description = "Datos invalidos")
+    @ApiResponse(responseCode = "404", description = "La categoria no existe")
+    @ApiResponse(responseCode = "409", description = "El nombre ya lo usa otra categoria")
+    public ResponseEntity<CategoriaResponse> actualizar(
+            @Parameter(description = "Id de la categoria", example = "1") @PathVariable("id") Long id,
+            @Valid @RequestBody CategoriaRequest solicitud) {
         return ResponseEntity.ok(CategoriaResponse.desde(categoriaService.actualizar(id, solicitud)));
     }
 
-    /** DELETE - DELETE /api/categorias/{id} (solo si no tiene productos) */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable("id") Long id) {
+    @Operation(summary = "Eliminar una categoria",
+            description = "Borrado fisico. No se permite si la categoria tiene productos asociados.")
+    @ApiResponse(responseCode = "204", description = "Categoria eliminada")
+    @ApiResponse(responseCode = "404", description = "La categoria no existe")
+    @ApiResponse(responseCode = "409", description = "La categoria tiene productos")
+    public ResponseEntity<Void> eliminar(
+            @Parameter(description = "Id de la categoria", example = "5") @PathVariable("id") Long id) {
         categoriaService.eliminar(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+        return ResponseEntity.noContent().build();
     }
 }

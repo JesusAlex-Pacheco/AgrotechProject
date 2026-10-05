@@ -12,7 +12,11 @@ import java.util.List;
  */
 public interface ProductoService {
 
-    /** Crea un producto. Nace disponible solo si tiene existencias. */
+    /**
+     * Crea un producto. Nace disponible solo si tiene existencias.
+     *
+     * @throws edu.itm.agrotech.exception.RecursoNoEncontradoException si el agricultor o la categoria no existen
+     */
     Producto crear(ProductoRequest solicitud);
 
     /** @throws edu.itm.agrotech.exception.RecursoNoEncontradoException si no existe */
@@ -21,6 +25,12 @@ public interface ProductoService {
     /** Lista el catalogo con filtros opcionales por categoria y por nombre. */
     List<Producto> listar(Long idCategoria, String nombre);
 
+    /**
+     * Actualiza los datos editables del producto.
+     *
+     * @throws edu.itm.agrotech.exception.ReglaNegocioException si se intenta cambiar el agricultor
+     * @throws edu.itm.agrotech.exception.RecursoNoEncontradoException si el producto o la categoria no existen
+     */
     Producto actualizar(Long id, ProductoRequest solicitud);
 
     /**

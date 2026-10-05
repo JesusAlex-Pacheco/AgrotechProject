@@ -12,12 +12,16 @@ Integrantes: **Jesús Pacheco** · **Sebastián Galeano**
 
 | Criterio evaluado | Dónde se cumple |
 |---|---|
-| API REST completa de una entidad (Create, Read, Update, List, Delete) | `ProductoController` — 5 endpoints |
-| Uso de métodos HTTP | POST, GET, PUT, DELETE |
+| Implementación de APIs | 3 controladores y 14 endpoints: `ProductoController` (CRUD), `CategoriaController` (CRUD), `PedidoController` (casos de negocio) |
+| Uso de métodos HTTP | POST, GET, PUT, PATCH, DELETE |
 | Arquitectura n-capas | Paquetes `controller` → `service` → `repository` → `domain` |
+| Separación entre capas con interfaces | Servicios (`service/` + `service/impl/`) y repositorios (`repository/` + `repository/jdbc/`) se usan siempre a través de su interfaz |
+| Principios SOLID | Ver sección 3.1 |
+| Clean Code | Ver sección 3.2 |
 | Base de datos relacional con JDBC y SQL | `repository/jdbc` — `Connection`, `PreparedStatement`, SQL escrito a mano |
-| Interacción de negocio | `POST /api/pedidos` — registro de una venta con descuento de inventario |
-| Documentación de la API | Swagger UI (springdoc-openapi) en `/swagger-ui.html` |
+| Casos de negocio | Registrar una venta (transacción con descuento de inventario), ciclo de vida del pedido (pago, despacho, entrega, cancelación con devolución de inventario) e historial de compras del cliente |
+| Documentación de la API | Swagger UI (springdoc-openapi) en `/swagger-ui.html`, con descripción de cada endpoint, sus respuestas y ejemplos |
+| Pruebas | 33 pruebas unitarias de las reglas de negocio (`src/test`) |
 | Trabajo en equipo | Commits de ambos integrantes |
 | Estrategia de ramas | Git Flow simplificado — ver sección 12 |
 
@@ -37,21 +41,52 @@ Integrantes: **Jesús Pacheco** · **Sebastián Galeano**
 ## 3. Arquitectura
 
 ```
-controller/   Capa de presentación. Expone los servicios REST.
-              No contiene reglas de negocio ni SQL.
+controller/        Capa de presentación. Expone los servicios REST.
+                   No contiene reglas de negocio ni SQL.
+      |  depende de la interfaz
+service/           Contratos de negocio (interfaces).
+service/impl/      Reglas de negocio: valida existencias, congela precios,
+                   calcula totales, controla el ciclo de vida del pedido.
+      |  depende de la interfaz
+repository/        Contratos de persistencia (interfaces).
+repository/jdbc/   Implementación con JDBC puro y SQL.
       |
-service/      Capa de negocio. Valida existencias, congela precios,
-              calcula totales y orquesta la operación.
-      |
-repository/   Contratos de persistencia (interfaces).
-repository/jdbc/  Implementación con JDBC puro y SQL.
-      |
-domain/       Entidades y enumeraciones. No conocen la base de datos.
+domain/            Entidades y enumeraciones. No conocen la base de datos.
 ```
 
-Los repositorios se declaran como **interfaces** para que la capa de negocio
-dependa del contrato y no de la implementación. Cambiar de motor de base de
-datos no obliga a tocar los servicios.
+Cada capa depende de la **interfaz** de la capa de abajo, nunca de su
+implementación. Spring inyecta la implementación por constructor. Gracias a
+esto:
+
+- Cambiar de motor de base de datos no obliga a tocar los servicios.
+- Las reglas de negocio se prueban sin base de datos, reemplazando los
+  repositorios por simulaciones (Mockito).
+
+### 3.1 Principios SOLID
+
+| Principio | Cómo se aplica |
+|---|---|
+| **S** — Responsabilidad única | Cada capa tiene un solo trabajo: el controlador traduce HTTP, el servicio aplica reglas, el repositorio ejecuta SQL. `EjecutorJdbc` concentra el manejo de conexiones y `ManejadorGlobalErrores` el de errores |
+| **O** — Abierto/cerrado | Un error nuevo se agrega como un método más del manejador global, sin tocar los controladores. Las transiciones del pedido viven en `EstadoPedido.puedeCambiarA` |
+| **L** — Sustitución de Liskov | Cualquier implementación de `ProductoRepository` (la JDBC o una simulada en las pruebas) funciona igual para el servicio |
+| **I** — Segregación de interfaces | Interfaces pequeñas por entidad. `AgricultorRepository` y `ClienteRepository` solo exponen `existe(id)`, que es lo único que el negocio necesita |
+| **D** — Inversión de dependencias | Controlador → interfaz de servicio → interfaz de repositorio. Ninguna capa conoce la clase concreta de la siguiente |
+
+### 3.2 Clean Code
+
+- **Sin código repetido en la persistencia:** `EjecutorJdbc` concentra el
+  patrón *abrir conexión → preparar → ejecutar → cerrar → traducir error* y
+  las transacciones (`enTransaccion`). Cada repositorio solo escribe su SQL,
+  sus parámetros y su mapeo.
+- **Reglas en el dominio:** `Pago.pendiente()`, `pago.aprobar()`,
+  `pago.rechazar()` y `estadoPedido.puedeCambiarA()` expresan el negocio con
+  nombres del negocio.
+- **Métodos cortos con nombre propio:** `validarTransicion`,
+  `aplicarEfectosSobrePago`, `validarClienteExiste`, `aplicarDatos`.
+- **Un solo formato de error** (`ErrorResponse`) para todas las respuestas,
+  incluidos JSON mal formado, parámetros inválidos y rutas inexistentes.
+- **Errores del servidor registrados en el log** con su causa real, sin
+  exponer detalles técnicos al cliente.
 
 Las entidades del paquete `domain` usan **Lombok** (`@Getter`, `@Setter`,
 `@NoArgsConstructor`) para evitar el código repetitivo de los accesores.
@@ -60,8 +95,8 @@ Las entidades del paquete `domain` usan **Lombok** (`@Getter`, `@Setter`,
 entidades del dominio no queden expuestas directamente.
 
 `exception/` centraliza el manejo de errores: `ManejadorGlobalErrores`
-traduce las excepciones a respuestas HTTP (400, 404, 409, 500) sin exponer
-trazas técnicas al cliente.
+traduce las excepciones a respuestas HTTP (400, 404, 405, 409, 500) con el
+formato único `ErrorResponse`, sin exponer trazas técnicas al cliente.
 
 ## 4. Requisitos
 
@@ -192,10 +227,10 @@ Started AgrotechApplication in X seconds
 
 | Método | Ruta | Descripción | Respuesta |
 |---|---|---|---|
-| POST | `/api/productos` | Crear un producto | 201 Created |
+| POST | `/api/productos` | Crear un producto | 201 Created / 404 si el agricultor o la categoría no existen |
 | GET | `/api/productos` | Listar el catálogo (filtros: `idCategoria`, `nombre`) | 200 OK |
 | GET | `/api/productos/{id}` | Consultar un producto | 200 OK / 404 |
-| PUT | `/api/productos/{id}` | Actualizar un producto | 200 OK / 404 |
+| PUT | `/api/productos/{id}` | Actualizar un producto | 200 OK / 404 / 409 si se intenta cambiar el agricultor |
 | DELETE | `/api/productos/{id}` | Baja lógica del producto | 204 No Content / 404 |
 
 El DELETE es **baja lógica**: marca `disponible = false` en lugar de borrar la
@@ -216,14 +251,31 @@ Cuerpo de ejemplo para POST y PUT:
 }
 ```
 
-`idAgricultor` e `idCategoria` deben existir en la base de datos.
+`idAgricultor` e `idCategoria` deben existir en la base de datos. Un producto
+pertenece siempre al agricultor que lo publicó: el PUT no permite cambiarlo.
 
-### Pedido — interacción de negocio
+### Categoría — CRUD completo
+
+| Método | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| POST | `/api/categorias` | Crear una categoría | 201 Created / 409 si el nombre existe |
+| GET | `/api/categorias` | Listar las categorías | 200 OK |
+| GET | `/api/categorias/{id}` | Consultar una categoría | 200 OK / 404 |
+| PUT | `/api/categorias/{id}` | Renombrar una categoría | 200 OK / 404 / 409 |
+| DELETE | `/api/categorias/{id}` | Eliminar una categoría sin productos | 204 No Content / 404 / 409 |
+
+El nombre no se puede repetir, sin importar mayúsculas. El DELETE es físico
+porque la tabla no tiene columna de estado, y se rechaza si la categoría tiene
+productos.
+
+### Pedido — casos de negocio
 
 | Método | Ruta | Descripción |
 |---|---|---|
 | POST | `/api/pedidos` | Registrar una venta |
 | GET | `/api/pedidos/{id}` | Consultar un pedido con sus líneas y su pago |
+| GET | `/api/pedidos?idCliente=1&estado=ENTREGADO` | Historial de compras de un cliente (el `estado` es opcional) |
+| PATCH | `/api/pedidos/{id}/estado` | Cambiar el estado del pedido: `{ "estado": "PAGADO" }` |
 
 Cuerpo de ejemplo:
 
@@ -243,7 +295,7 @@ Cuerpo de ejemplo:
 
 `POST /api/pedidos` ejecuta, en una sola transacción JDBC:
 
-1. Valida que cada producto exista y tenga existencias suficientes.
+1. Valida que el cliente exista y que cada producto exista y tenga existencias suficientes.
 2. Congela el precio unitario del momento de la compra.
 3. Calcula subtotal, costo de envío y total.
 4. Inserta el pedido y sus líneas de detalle.
@@ -257,17 +309,54 @@ El descuento de inventario usa una sentencia condicional
 la validación y la escritura, la sentencia no afecta ninguna fila y la
 transacción se revierte. Es el control de concurrencia de la operación.
 
+#### Ciclo de vida del pedido
+
+```
+CREADO ──► PAGADO ──► EN_RUTA ──► ENTREGADO
+   │          │
+   └──────────┴──────► CANCELADO
+```
+
+| Desde | Puede pasar a |
+|---|---|
+| `CREADO` | `PAGADO`, `EN_RUTA` (solo contra entrega), `CANCELADO` |
+| `PAGADO` | `EN_RUTA`, `CANCELADO` |
+| `EN_RUTA` | `ENTREGADO` |
+| `ENTREGADO`, `CANCELADO` | Nada: son estados finales |
+
+- **PSE o tarjeta:** se paga antes de despachar. Al pasar a `PAGADO`, el pago
+  queda `APROBADO`.
+- **Contra entrega:** se despacha sin pagar (`CREADO → EN_RUTA`) y se cobra al
+  pasar a `ENTREGADO`.
+- **Cancelar** devuelve el inventario y deja `RECHAZADO` el pago pendiente.
+- Todo ocurre en una sola transacción. El `UPDATE` del estado incluye
+  `WHERE estado = <anterior>`: si dos personas cambian el mismo pedido al
+  tiempo, la segunda recibe 409 en lugar de pisar el cambio de la primera.
+
 ## 8. Códigos de respuesta
 
 | Código | Cuándo |
 |---|---|
 | 200 | Consulta o actualización correcta |
 | 201 | Recurso creado |
-| 204 | Baja lógica aplicada |
-| 400 | Datos inválidos (validación de entrada) |
-| 404 | El recurso no existe |
-| 409 | Se violó una regla de negocio (por ejemplo, sin existencias) |
+| 204 | Baja lógica o eliminación aplicada |
+| 400 | Datos inválidos, JSON mal formado, parámetro con tipo incorrecto o faltante |
+| 404 | El recurso no existe (producto, categoría, pedido, agricultor, cliente o ruta) |
+| 405 | Método HTTP no permitido en esa ruta |
+| 409 | Se violó una regla de negocio (sin existencias, transición no permitida, nombre repetido…) |
 | 500 | Error de persistencia (por ejemplo, MySQL apagado) |
+
+Todas las respuestas de error tienen el mismo formato:
+
+```json
+{
+  "fecha": "2026-10-03T10:15:30",
+  "estado": 404,
+  "mensaje": "No existe el cliente con id 999"
+}
+```
+
+Los errores de validación agregan el campo `errores` con el mensaje de cada campo.
 
 ## 9. Probar la API
 
@@ -280,6 +369,11 @@ Con la API en ejecución, abrir en el navegador:
 
 En cada endpoint: **Try it out** → completar los parámetros o el JSON →
 **Execute**. Swagger muestra la respuesta y el código HTTP.
+
+Los endpoints están agrupados en **Productos**, **Categorías** y **Pedidos**.
+Cada uno tiene su descripción, los códigos de respuesta posibles con su
+significado y JSON de ejemplo con datos reales del proyecto. La configuración
+general está en `config/OpenApiConfig.java`.
 
 ### 9.2 Archivo `requests.http`
 
@@ -306,6 +400,24 @@ $body = @{ idAgricultor=1; idCategoria=1; nombre="Mango de azucar"; precio=4200;
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/productos -ContentType "application/json" -Body $body
 ```
 
+### 9.4 Pruebas unitarias
+
+```bash
+./gradlew test
+```
+
+33 pruebas de las reglas de negocio, sin base de datos: los repositorios se
+reemplazan por simulaciones con Mockito.
+
+| Clase de prueba | Qué verifica |
+|---|---|
+| `EstadoPedidoTest` | Transiciones permitidas y prohibidas del ciclo de vida |
+| `ProductoServiceImplTest` | Agricultor y categoría inexistentes, producto sin stock, cambio de agricultor |
+| `CategoriaServiceImplTest` | Nombre repetido, renombrar con el mismo nombre, eliminar con y sin productos |
+| `PedidoServiceImplTest` | Cálculo del total, falta de existencias, cliente inexistente, reglas de pago por método, cancelación e historial |
+
+El reporte queda en `build/reports/tests/test/index.html`.
+
 ## 10. Estructura del repositorio
 
 ```
@@ -313,15 +425,20 @@ AgrotechProject/
 ├── db/                          Scripts SQL de esquema y datos
 ├── src/main/java/edu/itm/agrotech/
 │   ├── AgrotechApplication.java Punto de entrada de Spring Boot
+│   ├── config/                  Configuración de Swagger (OpenAPI)
 │   ├── controller/              Capa de presentación
-│   ├── service/                 Capa de negocio
-│   ├── repository/              Contratos de persistencia
-│   │   └── jdbc/                Implementación JDBC
+│   ├── service/                 Contratos de negocio (interfaces)
+│   │   └── impl/                Reglas de negocio
+│   ├── repository/              Contratos de persistencia (interfaces)
+│   │   └── jdbc/                Implementación JDBC y EjecutorJdbc
 │   ├── domain/                  Entidades y enumeraciones
-│   ├── dto/                     Objetos de transporte
+│   ├── dto/                     Objetos de transporte y ErrorResponse
 │   └── exception/               Excepciones y manejador global
 ├── src/main/resources/
 │   └── application.properties   Configuración (BD y puerto)
+├── src/test/java/edu/itm/agrotech/
+│   ├── domain/                  Pruebas del ciclo de vida
+│   └── service/impl/            Pruebas de las reglas de negocio
 ├── requests.http                Pruebas de la API
 ├── build.gradle                 Dependencias y configuración de Gradle
 └── settings.gradle
@@ -332,6 +449,7 @@ AgrotechProject/
 | Comando | Para qué |
 |---|---|
 | `./gradlew build` | Compila, ejecuta las pruebas y genera el `.jar` en `build/libs/` |
+| `./gradlew test` | Ejecuta solo las pruebas unitarias |
 | `./gradlew build --refresh-dependencies` | Igual, pero vuelve a descargar las dependencias |
 | `./gradlew bootRun` | Levanta la API en el puerto 8080 |
 | `./gradlew clean` | Borra la carpeta `build/` |

@@ -3,8 +3,11 @@ package edu.itm.agrotech.controller;
 import edu.itm.agrotech.dto.ProductoRequest;
 import edu.itm.agrotech.dto.ProductoResponse;
 import edu.itm.agrotech.service.ProductoService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,6 +28,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/productos")
+@Tag(name = "Productos")
 public class ProductoController {
 
     private final ProductoService productoService;
@@ -33,8 +37,12 @@ public class ProductoController {
         this.productoService = productoService;
     }
 
-    /** CREATE - POST /api/productos */
     @PostMapping
+    @Operation(summary = "Publicar un producto",
+            description = "El agricultor y la categoria deben existir. Con stock 0 el producto queda no disponible.")
+    @ApiResponse(responseCode = "201", description = "Producto creado")
+    @ApiResponse(responseCode = "400", description = "Datos invalidos")
+    @ApiResponse(responseCode = "404", description = "El agricultor o la categoria no existen")
     public ResponseEntity<ProductoResponse> crear(@Valid @RequestBody ProductoRequest solicitud) {
         ProductoResponse creado = ProductoResponse.desde(productoService.crear(solicitud));
         return ResponseEntity
@@ -42,16 +50,22 @@ public class ProductoController {
                 .body(creado);
     }
 
-    /** READ - GET /api/productos/{id} */
     @GetMapping("/{id}")
-    public ResponseEntity<ProductoResponse> consultar(@PathVariable("id") Long id) {
+    @Operation(summary = "Consultar un producto")
+    @ApiResponse(responseCode = "200", description = "Producto encontrado")
+    @ApiResponse(responseCode = "404", description = "El producto no existe")
+    public ResponseEntity<ProductoResponse> consultar(
+            @Parameter(description = "Id del producto", example = "1") @PathVariable("id") Long id) {
         return ResponseEntity.ok(ProductoResponse.desde(productoService.consultar(id)));
     }
 
-    /** LIST - GET /api/productos?idCategoria=1&nombre=aguacate */
     @GetMapping
+    @Operation(summary = "Listar el catalogo", description = "Filtros opcionales por categoria y por parte del nombre.")
+    @ApiResponse(responseCode = "200", description = "Catalogo (puede estar vacio)")
     public ResponseEntity<List<ProductoResponse>> listar(
+            @Parameter(description = "Id de la categoria", example = "1")
             @RequestParam(name = "idCategoria", required = false) Long idCategoria,
+            @Parameter(description = "Parte del nombre, sin distinguir mayusculas", example = "agua")
             @RequestParam(name = "nombre", required = false) String nombre) {
 
         List<ProductoResponse> productos = productoService.listar(idCategoria, nombre)
@@ -62,17 +76,27 @@ public class ProductoController {
         return ResponseEntity.ok(productos);
     }
 
-    /** UPDATE - PUT /api/productos/{id} */
     @PutMapping("/{id}")
-    public ResponseEntity<ProductoResponse> actualizar(@PathVariable("id") Long id,
-                                                       @Valid @RequestBody ProductoRequest solicitud) {
+    @Operation(summary = "Actualizar un producto",
+            description = "Se envian todos los campos. Un producto no puede cambiar de agricultor.")
+    @ApiResponse(responseCode = "200", description = "Producto actualizado")
+    @ApiResponse(responseCode = "400", description = "Datos invalidos")
+    @ApiResponse(responseCode = "404", description = "El producto o la categoria no existen")
+    @ApiResponse(responseCode = "409", description = "Se intento cambiar el agricultor")
+    public ResponseEntity<ProductoResponse> actualizar(
+            @Parameter(description = "Id del producto", example = "1") @PathVariable("id") Long id,
+            @Valid @RequestBody ProductoRequest solicitud) {
         return ResponseEntity.ok(ProductoResponse.desde(productoService.actualizar(id, solicitud)));
     }
 
-    /** DELETE - DELETE /api/productos/{id} (baja logica) */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> desactivar(@PathVariable("id") Long id) {
+    @Operation(summary = "Retirar un producto del catalogo",
+            description = "Baja logica: marca disponible = false sin borrar la fila, para conservar los pedidos historicos.")
+    @ApiResponse(responseCode = "204", description = "Producto retirado")
+    @ApiResponse(responseCode = "404", description = "El producto no existe")
+    public ResponseEntity<Void> desactivar(
+            @Parameter(description = "Id del producto", example = "3") @PathVariable("id") Long id) {
         productoService.desactivar(id);
-        return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+        return ResponseEntity.noContent().build();
     }
 }

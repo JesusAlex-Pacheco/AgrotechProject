@@ -2,11 +2,14 @@ package edu.itm.agrotech.dto;
 
 import edu.itm.agrotech.domain.DetallePedido;
 import edu.itm.agrotech.domain.Pedido;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/** Representacion del pedido que se devuelve al cliente de la API, con sus lineas y su pago. */
+@Schema(description = "Pedido con sus lineas y el estado de su pago")
 public record PedidoResponse(
         Long id,
         Long idCliente,
