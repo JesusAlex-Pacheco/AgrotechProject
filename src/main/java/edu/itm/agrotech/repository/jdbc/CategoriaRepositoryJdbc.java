@@ -1,17 +1,11 @@
 package edu.itm.agrotech.repository.jdbc;
 
 import edu.itm.agrotech.domain.Categoria;
-import edu.itm.agrotech.exception.ErrorPersistenciaException;
 import edu.itm.agrotech.repository.CategoriaRepository;
 import org.springframework.stereotype.Repository;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -57,135 +51,72 @@ public class CategoriaRepositoryJdbc implements CategoriaRepository {
             WHERE id_categoria = ?
             """;
 
-    private static final String SQL_CONTAR_PRODUCTOS = """
-            SELECT COUNT(*)
+    private static final String SQL_TIENE_PRODUCTOS = """
+            SELECT 1
             FROM producto
             WHERE id_categoria = ?
+            LIMIT 1
             """;
 
-    private final DataSource dataSource;
+    private final EjecutorJdbc jdbc;
 
-    public CategoriaRepositoryJdbc(DataSource dataSource) {
-        this.dataSource = dataSource;
+    public CategoriaRepositoryJdbc(EjecutorJdbc jdbc) {
+        this.jdbc = jdbc;
     }
 
     @Override
     public Categoria guardar(Categoria categoria) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia =
-                     conexion.prepareStatement(SQL_INSERTAR, Statement.RETURN_GENERATED_KEYS)) {
+        long id = jdbc.insertar(SQL_INSERTAR,
+                sentencia -> sentencia.setString(1, categoria.getNombre()),
+                "No fue posible guardar la categoria");
 
-            sentencia.setString(1, categoria.getNombre());
-            sentencia.executeUpdate();
-
-            try (ResultSet claves = sentencia.getGeneratedKeys()) {
-                if (claves.next()) {
-                    categoria.setId(claves.getLong(1));
-                }
-            }
-            return categoria;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible guardar la categoria", e);
-        }
+        categoria.setId(id);
+        return categoria;
     }
 
     @Override
     public Optional<Categoria> buscarPorId(Long id) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_BUSCAR_POR_ID)) {
-
-            sentencia.setLong(1, id);
-
-            try (ResultSet fila = sentencia.executeQuery()) {
-                if (fila.next()) {
-                    return Optional.of(mapear(fila));
-                }
-                return Optional.empty();
-            }
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible consultar la categoria", e);
-        }
+        return jdbc.consultarUno(SQL_BUSCAR_POR_ID,
+                sentencia -> sentencia.setLong(1, id),
+                this::mapear,
+                "No fue posible consultar la categoria");
     }
 
     @Override
     public Optional<Categoria> buscarPorNombre(String nombre) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_BUSCAR_POR_NOMBRE)) {
-
-            sentencia.setString(1, nombre);
-
-            try (ResultSet fila = sentencia.executeQuery()) {
-                if (fila.next()) {
-                    return Optional.of(mapear(fila));
-                }
-                return Optional.empty();
-            }
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible consultar la categoria", e);
-        }
+        return jdbc.consultarUno(SQL_BUSCAR_POR_NOMBRE,
+                sentencia -> sentencia.setString(1, nombre),
+                this::mapear,
+                "No fue posible consultar la categoria");
     }
 
     @Override
     public List<Categoria> listar() {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_LISTAR);
-             ResultSet filas = sentencia.executeQuery()) {
-
-            List<Categoria> categorias = new ArrayList<>();
-            while (filas.next()) {
-                categorias.add(mapear(filas));
-            }
-            return categorias;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible listar las categorias", e);
-        }
+        return jdbc.consultar(SQL_LISTAR, EjecutorJdbc.SIN_PARAMETROS, this::mapear,
+                "No fue posible listar las categorias");
     }
 
     @Override
     public boolean actualizar(Categoria categoria) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_ACTUALIZAR)) {
-
+        return jdbc.actualizar(SQL_ACTUALIZAR, sentencia -> {
             sentencia.setString(1, categoria.getNombre());
             sentencia.setLong(2, categoria.getId());
-            return sentencia.executeUpdate() > 0;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible actualizar la categoria", e);
-        }
+        }, "No fue posible actualizar la categoria") > 0;
     }
 
     @Override
     public boolean eliminar(Long id) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_ELIMINAR)) {
-
-            sentencia.setLong(1, id);
-            return sentencia.executeUpdate() > 0;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible eliminar la categoria", e);
-        }
+        return jdbc.actualizar(SQL_ELIMINAR,
+                sentencia -> sentencia.setLong(1, id),
+                "No fue posible eliminar la categoria") > 0;
     }
 
     @Override
     public boolean tieneProductos(Long id) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_CONTAR_PRODUCTOS)) {
-
-            sentencia.setLong(1, id);
-
-            try (ResultSet fila = sentencia.executeQuery()) {
-                return fila.next() && fila.getLong(1) > 0;
-            }
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible verificar los productos de la categoria", e);
-        }
+        return jdbc.consultarUno(SQL_TIENE_PRODUCTOS,
+                sentencia -> sentencia.setLong(1, id),
+                fila -> fila.getInt(1),
+                "No fue posible verificar los productos de la categoria").isPresent();
     }
 
     private Categoria mapear(ResultSet fila) throws SQLException {

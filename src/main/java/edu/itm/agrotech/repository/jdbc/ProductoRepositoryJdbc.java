@@ -1,26 +1,27 @@
 package edu.itm.agrotech.repository.jdbc;
 
 import edu.itm.agrotech.domain.Producto;
-import edu.itm.agrotech.exception.ErrorPersistenciaException;
 import edu.itm.agrotech.repository.ProductoRepository;
 import org.springframework.stereotype.Repository;
 
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * Implementacion de la persistencia con JDBC puro: Connection,
- * PreparedStatement y sentencias SQL escritas a mano.
+ * Implementacion de la persistencia con JDBC puro: PreparedStatement y
+ * sentencias SQL escritas a mano. El manejo de conexiones y errores lo
+ * centraliza {@link EjecutorJdbc}.
  */
 @Repository
 public class ProductoRepositoryJdbc implements ProductoRepository {
+
+    private static final String COLUMNAS = """
+            id_producto, id_agricultor, id_categoria, nombre, descripcion,
+            precio, unidad_medida, stock, disponible, foto_url
+            """;
 
     private static final String SQL_INSERTAR = """
             INSERT INTO producto
@@ -29,12 +30,11 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
-    private static final String SQL_BUSCAR_POR_ID = """
-            SELECT id_producto, id_agricultor, id_categoria, nombre, descripcion,
-                   precio, unidad_medida, stock, disponible, foto_url
-            FROM producto
-            WHERE id_producto = ?
-            """;
+    private static final String SQL_BUSCAR_POR_ID =
+            "SELECT " + COLUMNAS + " FROM producto WHERE id_producto = ?";
+
+    private static final String SQL_LISTAR =
+            "SELECT " + COLUMNAS + " FROM producto WHERE 1 = 1";
 
     private static final String SQL_ACTUALIZAR = """
             UPDATE producto
@@ -49,18 +49,15 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
             WHERE id_producto = ?
             """;
 
-    private final DataSource dataSource;
+    private final EjecutorJdbc jdbc;
 
-    public ProductoRepositoryJdbc(DataSource dataSource) {
-        this.dataSource = dataSource;
+    public ProductoRepositoryJdbc(EjecutorJdbc jdbc) {
+        this.jdbc = jdbc;
     }
 
     @Override
     public Producto guardar(Producto producto) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia =
-                     conexion.prepareStatement(SQL_INSERTAR, Statement.RETURN_GENERATED_KEYS)) {
-
+        long id = jdbc.insertar(SQL_INSERTAR, sentencia -> {
             sentencia.setLong(1, producto.getIdAgricultor());
             sentencia.setLong(2, producto.getIdCategoria());
             sentencia.setString(3, producto.getNombre());
@@ -70,38 +67,18 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
             sentencia.setBigDecimal(7, producto.getStock());
             sentencia.setBoolean(8, producto.isDisponible());
             sentencia.setString(9, producto.getFotoUrl());
+        }, "No fue posible guardar el producto");
 
-            sentencia.executeUpdate();
-
-            try (ResultSet claves = sentencia.getGeneratedKeys()) {
-                if (claves.next()) {
-                    producto.setId(claves.getLong(1));
-                }
-            }
-            return producto;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible guardar el producto", e);
-        }
+        producto.setId(id);
+        return producto;
     }
 
     @Override
     public Optional<Producto> buscarPorId(Long id) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_BUSCAR_POR_ID)) {
-
-            sentencia.setLong(1, id);
-
-            try (ResultSet fila = sentencia.executeQuery()) {
-                if (fila.next()) {
-                    return Optional.of(mapear(fila));
-                }
-                return Optional.empty();
-            }
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible consultar el producto", e);
-        }
+        return jdbc.consultarUno(SQL_BUSCAR_POR_ID,
+                sentencia -> sentencia.setLong(1, id),
+                this::mapear,
+                "No fue posible consultar el producto");
     }
 
     /**
@@ -111,50 +88,29 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
      */
     @Override
     public List<Producto> listar(Long idCategoria, String nombre) {
-        StringBuilder sql = new StringBuilder("""
-                SELECT id_producto, id_agricultor, id_categoria, nombre, descripcion,
-                       precio, unidad_medida, stock, disponible, foto_url
-                FROM producto
-                WHERE 1 = 1
-                """);
-
-        List<Object> parametros = new ArrayList<>();
+        StringBuilder sql = new StringBuilder(SQL_LISTAR);
+        List<Object> valores = new ArrayList<>();
 
         if (idCategoria != null) {
-            sql.append(" AND id_categoria = ? ");
-            parametros.add(idCategoria);
+            sql.append(" AND id_categoria = ?");
+            valores.add(idCategoria);
         }
         if (nombre != null && !nombre.isBlank()) {
-            sql.append(" AND LOWER(nombre) LIKE ? ");
-            parametros.add("%" + nombre.toLowerCase() + "%");
+            sql.append(" AND LOWER(nombre) LIKE ?");
+            valores.add("%" + nombre.toLowerCase() + "%");
         }
-        sql.append(" ORDER BY nombre ");
+        sql.append(" ORDER BY nombre");
 
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(sql.toString())) {
-
-            for (int i = 0; i < parametros.size(); i++) {
-                sentencia.setObject(i + 1, parametros.get(i));
+        return jdbc.consultar(sql.toString(), sentencia -> {
+            for (int i = 0; i < valores.size(); i++) {
+                sentencia.setObject(i + 1, valores.get(i));
             }
-
-            try (ResultSet filas = sentencia.executeQuery()) {
-                List<Producto> productos = new ArrayList<>();
-                while (filas.next()) {
-                    productos.add(mapear(filas));
-                }
-                return productos;
-            }
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible listar los productos", e);
-        }
+        }, this::mapear, "No fue posible listar los productos");
     }
 
     @Override
     public boolean actualizar(Producto producto) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_ACTUALIZAR)) {
-
+        return jdbc.actualizar(SQL_ACTUALIZAR, sentencia -> {
             sentencia.setLong(1, producto.getIdCategoria());
             sentencia.setString(2, producto.getNombre());
             sentencia.setString(3, producto.getDescripcion());
@@ -164,12 +120,7 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
             sentencia.setBoolean(7, producto.isDisponible());
             sentencia.setString(8, producto.getFotoUrl());
             sentencia.setLong(9, producto.getId());
-
-            return sentencia.executeUpdate() > 0;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible actualizar el producto", e);
-        }
+        }, "No fue posible actualizar el producto") > 0;
     }
 
     /**
@@ -178,15 +129,9 @@ public class ProductoRepositoryJdbc implements ProductoRepository {
      */
     @Override
     public boolean desactivar(Long id) {
-        try (Connection conexion = dataSource.getConnection();
-             PreparedStatement sentencia = conexion.prepareStatement(SQL_DESACTIVAR)) {
-
-            sentencia.setLong(1, id);
-            return sentencia.executeUpdate() > 0;
-
-        } catch (SQLException e) {
-            throw new ErrorPersistenciaException("No fue posible desactivar el producto", e);
-        }
+        return jdbc.actualizar(SQL_DESACTIVAR,
+                sentencia -> sentencia.setLong(1, id),
+                "No fue posible desactivar el producto") > 0;
     }
 
     private Producto mapear(ResultSet fila) throws SQLException {

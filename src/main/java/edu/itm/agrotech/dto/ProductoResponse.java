@@ -1,10 +1,12 @@
 package edu.itm.agrotech.dto;
 
 import edu.itm.agrotech.domain.Producto;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 
 /** Representacion del producto que se devuelve al cliente de la API. */
+@Schema(description = "Producto del catalogo")
 public record ProductoResponse(
         Long id,
         Long idAgricultor,

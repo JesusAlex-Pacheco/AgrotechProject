@@ -85,3 +85,115 @@ Content-Type: application/json
   "unidadMedida": "kg",
   "stock": 10
 }
+
+### ERROR esperado 404 - el agricultor no existe
+POST {{host}}/api/productos
+Content-Type: application/json
+
+{
+  "idAgricultor": 999,
+  "idCategoria": 1,
+  "nombre": "Banano",
+  "precio": 1800,
+  "unidadMedida": "kg",
+  "stock": 10
+}
+
+### ERROR esperado 409 - un producto no puede cambiar de agricultor
+PUT {{host}}/api/productos/1
+Content-Type: application/json
+
+{
+  "idAgricultor": 2,
+  "idCategoria": 1,
+  "nombre": "Aguacate Hass",
+  "precio": 3500.00,
+  "unidadMedida": "kg",
+  "stock": 100.00
+}
+
+### CATEGORIA - listar
+GET {{host}}/api/categorias
+
+### CATEGORIA - crear
+POST {{host}}/api/categorias
+Content-Type: application/json
+
+{ "nombre": "Granos" }
+
+### CATEGORIA - renombrar
+PUT {{host}}/api/categorias/5
+Content-Type: application/json
+
+{ "nombre": "Granos y cereales" }
+
+### CATEGORIA - ERROR esperado 409: nombre repetido
+POST {{host}}/api/categorias
+Content-Type: application/json
+
+{ "nombre": "frutas" }
+
+### CATEGORIA - ERROR esperado 409: tiene productos
+DELETE {{host}}/api/categorias/1
+
+### CATEGORIA - eliminar (sin productos)
+DELETE {{host}}/api/categorias/5
+
+### CICLO DE VIDA - marcar como pagado (pedido PSE)
+PATCH {{host}}/api/pedidos/1/estado
+Content-Type: application/json
+
+{ "estado": "PAGADO" }
+
+### CICLO DE VIDA - despachar
+PATCH {{host}}/api/pedidos/1/estado
+Content-Type: application/json
+
+{ "estado": "EN_RUTA" }
+
+### CICLO DE VIDA - entregar
+PATCH {{host}}/api/pedidos/1/estado
+Content-Type: application/json
+
+{ "estado": "ENTREGADO" }
+
+### CICLO DE VIDA - ERROR esperado 409: un pedido entregado no se cancela
+PATCH {{host}}/api/pedidos/1/estado
+Content-Type: application/json
+
+{ "estado": "CANCELADO" }
+
+### CICLO DE VIDA - contra entrega: se despacha sin pagar
+POST {{host}}/api/pedidos
+Content-Type: application/json
+
+{
+  "idCliente": 1,
+  "metodoPago": "CONTRA_ENTREGA",
+  "items": [ { "idProducto": 2, "cantidad": 1 } ]
+}
+
+### CICLO DE VIDA - cancelar devuelve el inventario (crear y luego cancelar)
+PATCH {{host}}/api/pedidos/2/estado
+Content-Type: application/json
+
+{ "estado": "CANCELADO" }
+
+### HISTORIAL - pedidos del cliente, del mas reciente al mas antiguo
+GET {{host}}/api/pedidos?idCliente=1
+
+### HISTORIAL - solo los entregados
+GET {{host}}/api/pedidos?idCliente=1&estado=ENTREGADO
+
+### HISTORIAL - ERROR esperado 404: el cliente no existe
+GET {{host}}/api/pedidos?idCliente=999
+
+### ERROR esperado 400 - metodo de pago que no existe
+POST {{host}}/api/pedidos
+Content-Type: application/json
+
+{
+  "idCliente": 1,
+  "metodoPago": "BITCOIN",
+  "items": [ { "idProducto": 1, "cantidad": 1 } ]
+}
