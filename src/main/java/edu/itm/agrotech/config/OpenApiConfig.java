@@ -33,8 +33,9 @@ public class OpenApiConfig {
                         .version("1.0.0")
                         .description("""
                                 Del campo a tu mesa, sin intermediarios. API que conecta a los \
-                                agricultores con los clientes: catalogo de productos, categorias, \
-                                registro de ventas y ciclo de vida de los pedidos.
+                                agricultores con los clientes: registro de usuarios, catalogo de \
+                                productos, categorias, ventas, ciclo de vida de los pedidos, \
+                                entregas y resenas.
 
                                 Todas las respuestas de error usan el mismo formato: \
                                 `fecha`, `estado`, `mensaje` y, en errores de validacion, `errores`.""")
@@ -42,12 +43,18 @@ public class OpenApiConfig {
                 // Grupos de Swagger UI, en el orden en que se muestran. Los
                 // controladores los referencian por nombre con @Tag.
                 .tags(List.of(
+                        new Tag().name("Usuarios")
+                                .description("Registro y consulta de agricultores, clientes y transportadores"),
                         new Tag().name("Productos")
                                 .description("Catalogo de productos publicados por los agricultores"),
                         new Tag().name("Categorias")
                                 .description("Clasificacion de los productos del catalogo"),
                         new Tag().name("Pedidos")
-                                .description("Ventas directas del agricultor al cliente y su ciclo de vida")));
+                                .description("Ventas directas del agricultor al cliente y su ciclo de vida"),
+                        new Tag().name("Entregas")
+                                .description("Programacion de entregas y agenda de los transportadores"),
+                        new Tag().name("Resenas")
+                                .description("Calificaciones de los clientes a los productos que recibieron")));
     }
 
     /**

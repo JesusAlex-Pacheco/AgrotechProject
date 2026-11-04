@@ -1,6 +1,65 @@
 ### Variables
 @host = http://localhost:8080
 
+### USUARIOS - registrar un agricultor (usuario + finca en una transaccion JPA)
+POST {{host}}/api/agricultores
+Content-Type: application/json
+
+{
+  "usuario": {
+    "nombre": "Marta Lucia Ospina",
+    "correo": "marta@agrotech.co",
+    "clave": "Campo2026*",
+    "telefono": "3107778899"
+  },
+  "nombreFinca": "Finca El Roble",
+  "municipio": "Rionegro",
+  "vereda": "Llanogrande"
+}
+
+### USUARIOS - ERROR esperado 409: el correo ya existe (sin importar mayusculas)
+POST {{host}}/api/agricultores
+Content-Type: application/json
+
+{
+  "usuario": { "nombre": "Otra", "correo": "MARTA@agrotech.co", "clave": "Campo2026*" },
+  "nombreFinca": "Finca X",
+  "municipio": "Rionegro"
+}
+
+### USUARIOS - registrar un cliente
+POST {{host}}/api/clientes
+Content-Type: application/json
+
+{
+  "usuario": { "nombre": "Pedro Gil", "correo": "pedro@agrotech.co", "clave": "Campo2026*" },
+  "direccion": "Carrera 43A # 1-50, Medellin"
+}
+
+### USUARIOS - registrar un transportador (necesario para programar entregas)
+POST {{host}}/api/transportadores
+Content-Type: application/json
+
+{
+  "usuario": { "nombre": "Carlos Ruta", "correo": "carlos@agrotech.co", "clave": "Campo2026*" },
+  "placa": "abc123",
+  "tipoVehiculo": "Camioneta"
+}
+
+### USUARIOS - ERROR esperado 400: errores de validacion en el objeto anidado
+POST {{host}}/api/clientes
+Content-Type: application/json
+
+{
+  "usuario": { "nombre": "", "correo": "no-es-correo", "clave": "123" }
+}
+
+### USUARIOS - consultar
+GET {{host}}/api/clientes/1
+
+### USUARIOS - consultar un transportador
+GET {{host}}/api/transportadores/1
+
 ### CREATE - crear un producto
 POST {{host}}/api/productos
 Content-Type: application/json
@@ -145,17 +204,50 @@ Content-Type: application/json
 
 { "estado": "PAGADO" }
 
-### CICLO DE VIDA - despachar
+### CICLO DE VIDA - ERROR esperado 409: no se despacha sin entrega programada
 PATCH {{host}}/api/pedidos/1/estado
 Content-Type: application/json
 
 { "estado": "EN_RUTA" }
 
-### CICLO DE VIDA - entregar
+### ENTREGA - programar (sin direccion: usa la del cliente). Ajuste la fecha a hoy o despues
+POST {{host}}/api/pedidos/1/entrega
+Content-Type: application/json
+
+{
+  "idTransportador": 1,
+  "fechaProgramada": "2026-12-01"
+}
+
+### ENTREGA - ERROR esperado 409: el pedido ya tiene entrega
+POST {{host}}/api/pedidos/1/entrega
+Content-Type: application/json
+
+{ "idTransportador": 1, "fechaProgramada": "2026-12-01" }
+
+### ENTREGA - ERROR esperado 400: fecha en el pasado
+POST {{host}}/api/pedidos/1/entrega
+Content-Type: application/json
+
+{ "idTransportador": 1, "fechaProgramada": "2020-01-01" }
+
+### CICLO DE VIDA - despachar (la entrega pasa a EN_RUTA)
+PATCH {{host}}/api/pedidos/1/estado
+Content-Type: application/json
+
+{ "estado": "EN_RUTA" }
+
+### CICLO DE VIDA - entregar (la entrega queda ENTREGADA con fecha)
 PATCH {{host}}/api/pedidos/1/estado
 Content-Type: application/json
 
 { "estado": "ENTREGADO" }
+
+### ENTREGA - consultar la entrega del pedido
+GET {{host}}/api/pedidos/1/entrega
+
+### ENTREGA - agenda del transportador, opcionalmente por estado
+GET {{host}}/api/transportadores/1/entregas?estado=ENTREGADA
 
 ### CICLO DE VIDA - ERROR esperado 409: un pedido entregado no se cancela
 PATCH {{host}}/api/pedidos/1/estado
@@ -163,7 +255,7 @@ Content-Type: application/json
 
 { "estado": "CANCELADO" }
 
-### CICLO DE VIDA - contra entrega: se despacha sin pagar
+### CICLO DE VIDA - pedido contra entrega (se despacha sin pagar y se cobra al entregar)
 POST {{host}}/api/pedidos
 Content-Type: application/json
 
@@ -187,6 +279,36 @@ GET {{host}}/api/pedidos?idCliente=1&estado=ENTREGADO
 
 ### HISTORIAL - ERROR esperado 404: el cliente no existe
 GET {{host}}/api/pedidos?idCliente=999
+
+### RESENA - calificar un producto recibido (el pedido 1 fue ENTREGADO)
+POST {{host}}/api/productos/1/resenas
+Content-Type: application/json
+
+{ "idCliente": 1, "calificacion": 5, "comentario": "Llego fresco y bien empacado" }
+
+### RESENA - ERROR esperado 409: el cliente ya reseno este producto
+POST {{host}}/api/productos/1/resenas
+Content-Type: application/json
+
+{ "idCliente": 1, "calificacion": 4 }
+
+### RESENA - ERROR esperado 409: el cliente no ha recibido este producto
+POST {{host}}/api/productos/3/resenas
+Content-Type: application/json
+
+{ "idCliente": 1, "calificacion": 5 }
+
+### RESENA - ERROR esperado 400: calificacion fuera de 1 a 5
+POST {{host}}/api/productos/1/resenas
+Content-Type: application/json
+
+{ "idCliente": 1, "calificacion": 6 }
+
+### RESENA - resenas del producto con su promedio
+GET {{host}}/api/productos/1/resenas
+
+### RESENA - resenas escritas por el cliente (relacion @OneToMany)
+GET {{host}}/api/clientes/1/resenas
 
 ### ERROR esperado 400 - metodo de pago que no existe
 POST {{host}}/api/pedidos

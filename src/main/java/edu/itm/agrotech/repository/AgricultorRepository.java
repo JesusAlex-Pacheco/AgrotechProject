@@ -1,11 +1,19 @@
 package edu.itm.agrotech.repository;
 
-/**
- * Contrato de consulta de agricultores. Por ahora la capa de negocio solo
- * necesita saber si un agricultor existe antes de asociarle un producto,
- * asi que la interfaz expone unicamente eso.
- */
-public interface AgricultorRepository {
+import edu.itm.agrotech.entity.Agricultor;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
-    boolean existe(Long id);
+import java.util.Optional;
+
+/**
+ * Repositorio JPA de agricultores. Spring Data genera la implementacion:
+ * save, findById, existsById... y las consultas declaradas aqui.
+ */
+public interface AgricultorRepository extends JpaRepository<Agricultor, Long> {
+
+    /** Trae el agricultor con su usuario en una sola consulta (JOIN FETCH). */
+    @Query("SELECT a FROM Agricultor a JOIN FETCH a.usuario WHERE a.id = :id")
+    Optional<Agricultor> buscarConUsuario(@Param("id") Long id);
 }

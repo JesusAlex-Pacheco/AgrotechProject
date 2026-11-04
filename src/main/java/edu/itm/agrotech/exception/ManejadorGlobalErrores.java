@@ -3,6 +3,7 @@ package edu.itm.agrotech.exception;
 import edu.itm.agrotech.dto.ErrorResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -39,6 +41,18 @@ public class ManejadorGlobalErrores {
     @ExceptionHandler(ReglaNegocioException.class)
     public ResponseEntity<ErrorResponse> reglaNegocio(ReglaNegocioException ex) {
         return responder(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    /**
+     * Ultima linea de defensa de las restricciones de la base (UNIQUE, llaves
+     * foraneas) cuando dos solicitudes simultaneas pasan la validacion del
+     * servicio. El detalle tecnico se registra, pero no se expone.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> integridadDeDatos(DataIntegrityViolationException ex) {
+        LOG.warn("Violacion de integridad de datos: {}", ex.getMostSpecificCause().getMessage());
+        return responder(HttpStatus.CONFLICT,
+                "La operacion entra en conflicto con datos existentes (registro duplicado o relacionado)");
     }
 
     // ---------------------------------------------------------------
@@ -83,6 +97,12 @@ public class ManejadorGlobalErrores {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ErrorResponse> rutaInexistente(NoResourceFoundException ex) {
         return responder(HttpStatus.NOT_FOUND, "La ruta /" + ex.getResourcePath() + " no existe");
+    }
+
+    /** El cliente cerro la conexion antes de recibir la respuesta: no hay a quien responder. */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void clienteDesconectado(AsyncRequestNotUsableException ex) {
+        LOG.debug("El cliente cerro la conexion: {}", ex.getMessage());
     }
 
     // ---------------------------------------------------------------

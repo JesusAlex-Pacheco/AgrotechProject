@@ -93,7 +93,7 @@ public class ProductoServiceImpl implements ProductoService {
     }
 
     private void validarAgricultorExiste(Long idAgricultor) {
-        if (!agricultorRepository.existe(idAgricultor)) {
+        if (!agricultorRepository.existsById(idAgricultor)) {
             throw new RecursoNoEncontradoException(
                     "No existe el agricultor con id " + idAgricultor);
         }

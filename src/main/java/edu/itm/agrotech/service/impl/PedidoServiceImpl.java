@@ -13,6 +13,7 @@ import edu.itm.agrotech.repository.ClienteRepository;
 import edu.itm.agrotech.repository.PedidoRepository;
 import edu.itm.agrotech.repository.ProductoRepository;
 import edu.itm.agrotech.service.PedidoService;
+import edu.itm.agrotech.service.SeguimientoPedido;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -29,13 +30,20 @@ public class PedidoServiceImpl implements PedidoService {
     private final PedidoRepository pedidoRepository;
     private final ProductoRepository productoRepository;
     private final ClienteRepository clienteRepository;
+    private final List<SeguimientoPedido> seguimientos;
 
+    /**
+     * @param seguimientos todas las implementaciones registradas en Spring;
+     *                     hoy, la que sincroniza la entrega del pedido
+     */
     public PedidoServiceImpl(PedidoRepository pedidoRepository,
                              ProductoRepository productoRepository,
-                             ClienteRepository clienteRepository) {
+                             ClienteRepository clienteRepository,
+                             List<SeguimientoPedido> seguimientos) {
         this.pedidoRepository = pedidoRepository;
         this.productoRepository = productoRepository;
         this.clienteRepository = clienteRepository;
+        this.seguimientos = seguimientos;
     }
 
     @Override
@@ -95,6 +103,8 @@ public class PedidoServiceImpl implements PedidoService {
      *       RECHAZADO. Un pago ya APROBADO no se toca: el reembolso se
      *       gestiona fuera del sistema.</li>
      * </ul>
+     * Antes de guardar, cada {@link SeguimientoPedido} puede impedir el
+     * cambio; despues de guardarlo, cada uno es notificado.
      */
     @Override
     public Pedido cambiarEstado(Long id, EstadoPedido nuevoEstado) {
@@ -103,11 +113,14 @@ public class PedidoServiceImpl implements PedidoService {
         Pago pago = pedido.getPago();
 
         validarTransicion(estadoActual, nuevoEstado, pago);
+        seguimientos.forEach(seguimiento -> seguimiento.validarCambio(pedido, nuevoEstado));
         aplicarEfectosSobrePago(nuevoEstado, pago);
 
         pedido.setEstado(nuevoEstado);
         pedidoRepository.actualizarEstado(
                 pedido, estadoActual, nuevoEstado == EstadoPedido.CANCELADO);
+
+        seguimientos.forEach(seguimiento -> seguimiento.registrarCambio(pedido, nuevoEstado));
         return pedido;
     }
 
@@ -149,7 +162,7 @@ public class PedidoServiceImpl implements PedidoService {
     }
 
     private void validarClienteExiste(Long idCliente) {
-        if (!clienteRepository.existe(idCliente)) {
+        if (!clienteRepository.existsById(idCliente)) {
             throw new RecursoNoEncontradoException("No existe el cliente con id " + idCliente);
         }
     }

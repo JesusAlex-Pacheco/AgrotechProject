@@ -20,9 +20,16 @@ repositories {
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
 
-	// Aporta el DataSource (HikariCP). La persistencia se implementa con JDBC
-	// puro: Connection, PreparedStatement y SQL escrito a mano.
+	// Aporta el DataSource (HikariCP). El catalogo y las ventas se implementan
+	// con JDBC puro: Connection, PreparedStatement y SQL escrito a mano.
 	implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+
+	// Usuarios, entregas y resenas se persisten con JPA (Hibernate) sobre el
+	// mismo DataSource, con las relaciones mapeadas en las entidades.
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// Solo el modulo de cifrado de Spring Security: BCrypt para las claves.
+	implementation 'org.springframework.security:spring-security-crypto'
 
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 

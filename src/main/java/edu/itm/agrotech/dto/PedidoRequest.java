@@ -28,7 +28,6 @@ public record PedidoRequest(
 
         @Schema(description = "Productos y cantidades")
         @NotEmpty(message = "El pedido debe tener al menos un producto")
-        @Valid
-        List<ItemPedidoRequest> items
+        List<@Valid ItemPedidoRequest> items
 ) {
 }
