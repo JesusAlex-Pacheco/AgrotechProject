@@ -12,16 +12,18 @@ Integrantes: **Jesús Pacheco** · **Sebastián Galeano**
 
 | Criterio evaluado | Dónde se cumple |
 |---|---|
-| Implementación de APIs | 3 controladores y 14 endpoints: `ProductoController` (CRUD), `CategoriaController` (CRUD), `PedidoController` (casos de negocio) |
+| Implementación de APIs | 6 controladores y 26 endpoints: `UsuarioController`, `ProductoController` (CRUD), `CategoriaController` (CRUD), `PedidoController`, `EntregaController` y `ResenaController` |
 | Uso de métodos HTTP | POST, GET, PUT, PATCH, DELETE |
-| Arquitectura n-capas | Paquetes `controller` → `service` → `repository` → `domain` |
-| Separación entre capas con interfaces | Servicios (`service/` + `service/impl/`) y repositorios (`repository/` + `repository/jdbc/`) se usan siempre a través de su interfaz |
+| Arquitectura n-capas | Paquetes `controller` → `service` → `repository` → `domain` / `entity` |
+| Separación entre capas con interfaces | Servicios (`service/` + `service/impl/`) y repositorios (`repository/`) se usan siempre a través de su interfaz |
 | Principios SOLID | Ver sección 3.1 |
 | Clean Code | Ver sección 3.2 |
-| Base de datos relacional con JDBC y SQL | `repository/jdbc` — `Connection`, `PreparedStatement`, SQL escrito a mano |
-| Casos de negocio | Registrar una venta (transacción con descuento de inventario), ciclo de vida del pedido (pago, despacho, entrega, cancelación con devolución de inventario) e historial de compras del cliente |
-| Documentación de la API | Swagger UI (springdoc-openapi) en `/swagger-ui.html`, con descripción de cada endpoint, sus respuestas y ejemplos |
-| Pruebas | 33 pruebas unitarias de las reglas de negocio (`src/test`) |
+| DAO con SQL | Catálogo y ventas en `repository/jdbc`: `PreparedStatement`, SQL escrito a mano, **sin `SELECT *`** y **todas las conexiones cerradas** con `try-with-resources` — ver sección 3.3 |
+| DAO con JPA | Usuarios, entregas y reseñas en `entity/` con `@OneToOne`, `@ManyToOne` y `@OneToMany`, y repositorios Spring Data — ver sección 3.3 |
+| Casos de negocio | Registro de usuarios por rol, venta con descuento de inventario, ciclo de vida del pedido, programación y seguimiento de entregas, historial de compras y reseñas de productos recibidos |
+| Documentación de la API | Swagger UI (springdoc-openapi) en `/swagger-ui.html`: las 26 operaciones con descripción, códigos de respuesta, ejemplos y formato de error |
+| Manejo de errores | `ManejadorGlobalErrores`: un formato único (`ErrorResponse`) para 400, 404, 405, 409 y 500 |
+| Pruebas | 98 pruebas unitarias; cubren todos los métodos públicos de los servicios (`src/test`) |
 | Trabajo en equipo | Commits de ambos integrantes |
 | Estrategia de ramas | Git Flow simplificado — ver sección 12 |
 
@@ -33,7 +35,9 @@ Integrantes: **Jesús Pacheco** · **Sebastián Galeano**
 | Spring Boot | 4.1.1 | Framework web (Spring MVC + Tomcat embebido) |
 | Gradle (wrapper) | 9.7.1 | Construcción y dependencias |
 | MySQL | 8.0.16 o superior | Base de datos relacional |
-| JDBC + HikariCP | — | Acceso a datos con SQL escrito a mano |
+| JDBC + HikariCP | — | Acceso a datos con SQL escrito a mano (catálogo y ventas) |
+| Spring Data JPA + Hibernate | 7.4 | Acceso a datos con entidades y relaciones (usuarios, entregas, reseñas) |
+| Spring Security Crypto | — | Cifrado BCrypt de las claves de los usuarios |
 | Jakarta Validation | — | Validación de los datos de entrada |
 | Lombok | — | Getters, setters y constructores de las entidades |
 | springdoc-openapi | 3.1.1 | Swagger UI para documentar y probar la API |
@@ -46,12 +50,19 @@ controller/        Capa de presentación. Expone los servicios REST.
       |  depende de la interfaz
 service/           Contratos de negocio (interfaces).
 service/impl/      Reglas de negocio: valida existencias, congela precios,
-                   calcula totales, controla el ciclo de vida del pedido.
+                   calcula totales, controla el ciclo de vida del pedido,
+                   las entregas, los registros y las reseñas.
       |  depende de la interfaz
 repository/        Contratos de persistencia (interfaces).
+                   - Producto, Categoria, Pedido: los implementa repository/jdbc/.
+                   - Usuario, Agricultor, Cliente, Transportador, Entrega,
+                     Resena: extienden JpaRepository; Spring Data genera la
+                     implementación.
 repository/jdbc/   Implementación con JDBC puro y SQL.
       |
-domain/            Entidades y enumeraciones. No conocen la base de datos.
+domain/            Entidades del catálogo y las ventas (persistidas con JDBC)
+                   y enumeraciones. No conocen la base de datos.
+entity/            Entidades JPA con sus relaciones mapeadas.
 ```
 
 Cada capa depende de la **interfaz** de la capa de abajo, nunca de su
@@ -67,10 +78,10 @@ esto:
 | Principio | Cómo se aplica |
 |---|---|
 | **S** — Responsabilidad única | Cada capa tiene un solo trabajo: el controlador traduce HTTP, el servicio aplica reglas, el repositorio ejecuta SQL. `EjecutorJdbc` concentra el manejo de conexiones y `ManejadorGlobalErrores` el de errores |
-| **O** — Abierto/cerrado | Un error nuevo se agrega como un método más del manejador global, sin tocar los controladores. Las transiciones del pedido viven en `EstadoPedido.puedeCambiarA` |
-| **L** — Sustitución de Liskov | Cualquier implementación de `ProductoRepository` (la JDBC o una simulada en las pruebas) funciona igual para el servicio |
-| **I** — Segregación de interfaces | Interfaces pequeñas por entidad. `AgricultorRepository` y `ClienteRepository` solo exponen `existe(id)`, que es lo único que el negocio necesita |
-| **D** — Inversión de dependencias | Controlador → interfaz de servicio → interfaz de repositorio. Ninguna capa conoce la clase concreta de la siguiente |
+| **O** — Abierto/cerrado | `PedidoServiceImpl` avisa cada cambio de estado a la interfaz `SeguimientoPedido`; la entrega reacciona con `SeguimientoEntrega` sin que el servicio de pedidos la conozca. Una reacción nueva es una clase nueva, no un cambio en el servicio. Igual con los errores: uno nuevo es un método más del manejador global |
+| **L** — Sustitución de Liskov | Cualquier implementación de un repositorio (la JDBC, la que genera Spring Data o una simulada en las pruebas) funciona igual para el servicio |
+| **I** — Segregación de interfaces | Un contrato de servicio por caso de uso (`UsuarioService`, `EntregaService`, `ResenaService`…) y repositorios con solo las consultas que el negocio usa |
+| **D** — Inversión de dependencias | Controlador → interfaz de servicio → interfaz de repositorio. Los servicios usan `PasswordEncoder` (interfaz), no BCrypt directamente. Ninguna capa conoce la clase concreta de la siguiente |
 
 ### 3.2 Clean Code
 
@@ -87,9 +98,16 @@ esto:
   incluidos JSON mal formado, parámetros inválidos y rutas inexistentes.
 - **Errores del servidor registrados en el log** con su causa real, sin
   exponer detalles técnicos al cliente.
+- **Entidades JPA con comportamiento:** `Entrega.programar()`,
+  `entrega.despachar()`, `entrega.confirmar()`, `cliente.agregarResena()`
+  (mantiene sincronizados los dos lados de la relación).
+- **Sin `@Data` en las entidades JPA:** solo `@Getter`/`@Setter`, para evitar
+  ciclos infinitos en `toString`/`equals` con relaciones bidireccionales.
+- **DTOs anidados reutilizables:** `DatosUsuarioRequest` se reutiliza en los
+  tres registros en lugar de repetir nombre, correo y clave.
 
-Las entidades del paquete `domain` usan **Lombok** (`@Getter`, `@Setter`,
-`@NoArgsConstructor`) para evitar el código repetitivo de los accesores.
+Las entidades usan **Lombok** (`@Getter`, `@Setter`, `@NoArgsConstructor`)
+para evitar el código repetitivo de los accesores.
 
 `dto/` transporta los datos entre el front end y la API, de modo que las
 entidades del dominio no queden expuestas directamente.
@@ -97,6 +115,42 @@ entidades del dominio no queden expuestas directamente.
 `exception/` centraliza el manejo de errores: `ManejadorGlobalErrores`
 traduce las excepciones a respuestas HTTP (400, 404, 405, 409, 500) con el
 formato único `ErrorResponse`, sin exponer trazas técnicas al cliente.
+
+### 3.3 Persistencia: una parte con SQL y otra con JPA
+
+Las dos tecnologías comparten el mismo pool de conexiones (HikariCP) y la
+misma base. Cada tabla tiene **un solo dueño**:
+
+| Con SQL (`repository/jdbc`) | Con JPA (`entity/` + Spring Data) |
+|---|---|
+| `producto`, `categoria`, `pedido`, `detalle_pedido`, `pago` | `usuario`, `agricultor`, `cliente`, `transportador`, `entrega`, `resena` |
+| La venta y el cambio de estado necesitan transacciones a mano y `UPDATE` condicionales para controlar la concurrencia | Registros y consultas con relaciones, donde JPA ahorra código |
+
+**SQL — conexiones cerradas y sin `SELECT *`.** Todo el acceso pasa por
+`EjecutorJdbc`, que abre la conexión, la sentencia y el `ResultSet` en
+bloques `try-with-resources`: se cierran siempre, incluso si hay error. Las
+transacciones hacen `rollback` ante cualquier fallo. Cada consulta nombra
+sus columnas.
+
+**JPA — relaciones mapeadas:**
+
+| Relación | Dónde | Detalle |
+|---|---|---|
+| `@OneToOne` | `Agricultor`, `Cliente`, `Transportador` → `Usuario` | `id_usuario` es `UNIQUE`. `cascade = PERSIST`: el usuario se guarda junto con su perfil |
+| `@ManyToOne` | `Resena` → `Cliente`, `Entrega` → `Transportador` | Lado dueño de la relación (tiene la llave foránea) |
+| `@OneToMany` | `Cliente.resenas`, `Transportador.entregas` | Lado inverso (`mappedBy`). `GET /api/clientes/{id}/resenas` recorre `Cliente.resenas` |
+
+- Todas las relaciones son `LAZY` y `spring.jpa.open-in-view=false`: cada
+  consulta carga con `JOIN FETCH` solo lo que se va a mostrar.
+- `spring.jpa.hibernate.ddl-auto=validate`: al arrancar, Hibernate comprueba
+  que las entidades coincidan con las tablas de `db/01_esquema_mysql.sql`.
+  Nunca crea ni borra tablas.
+- Donde una entidad JPA apunta a una tabla de SQL (`Entrega.idPedido`,
+  `Resena.idProducto`) se guarda solo el id, no una relación, para que cada
+  tecnología siga siendo dueña de sus tablas.
+- Ninguna operación escribe con las dos tecnologías en la misma transacción.
+  La entrega se actualiza en su propia transacción JPA, después de confirmada
+  la transacción JDBC del pedido.
 
 ## 4. Requisitos
 
@@ -126,12 +180,13 @@ existe y, si no, el valor por defecto. Sin configurar nada, la API se conecta a:
 | Usuario | `root` |
 | Contraseña | `root` |
 
-Spring Boot crea el pool de conexiones (HikariCP) y los repositorios de
-`repository/jdbc` piden conexiones a ese pool para ejecutar el SQL.
+Spring Boot crea el pool de conexiones (HikariCP). Los repositorios de
+`repository/jdbc` y Hibernate (JPA) piden conexiones a ese mismo pool.
 
-La conexión se abre en la **primera consulta**, no al arrancar: la aplicación
-puede iniciar bien aunque MySQL esté apagado, y el error aparece al llamar a
-un endpoint.
+**MySQL debe estar encendido y con las tablas creadas antes de arrancar la
+API:** al iniciar, Hibernate valida que las entidades coincidan con las
+tablas. Si MySQL está apagado o falta una tabla, la aplicación no arranca y
+el log indica la causa.
 
 ### 5.2 Scripts
 
@@ -152,6 +207,12 @@ Datos que quedan disponibles para las pruebas:
 | cliente | 1 | Laura Gomez |
 | categoria | 1, 2, 3, 4 | Frutas, Verduras, Tuberculos, Hierbas |
 | producto | 1, 2, 3 | Aguacate Hass, Cilantro, Papa criolla |
+
+Los datos iniciales no traen transportadores: antes de programar una entrega
+hay que registrar uno con `POST /api/transportadores`.
+
+Las claves de los usuarios de ejemplo son un texto de relleno. Los usuarios
+que se registran por la API quedan con un hash BCrypt real.
 
 ### 5.3 Opción A: con MySQL Workbench (sin comandos)
 
@@ -222,6 +283,40 @@ Started AgrotechApplication in X seconds
 ```
 
 ## 7. Endpoints
+
+### Usuarios — registro por rol (JPA)
+
+| Método | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| POST | `/api/agricultores` | Registrar un agricultor y su finca | 201 / 400 / 409 si el correo existe |
+| GET | `/api/agricultores/{id}` | Consultar un agricultor | 200 / 404 |
+| POST | `/api/clientes` | Registrar un cliente | 201 / 400 / 409 |
+| GET | `/api/clientes/{id}` | Consultar un cliente | 200 / 404 |
+| POST | `/api/transportadores` | Registrar un transportador | 201 / 400 / 409 |
+| GET | `/api/transportadores/{id}` | Consultar un transportador | 200 / 404 |
+
+Cuerpo de ejemplo (los datos de acceso van en el objeto `usuario`, igual en
+los tres registros):
+
+```json
+{
+  "usuario": {
+    "nombre": "Marta Lucia Ospina",
+    "correo": "marta@agrotech.co",
+    "clave": "Campo2026*",
+    "telefono": "3107778899"
+  },
+  "nombreFinca": "Finca El Roble",
+  "municipio": "Rionegro",
+  "vereda": "Llanogrande"
+}
+```
+
+- El correo es único sin importar mayúsculas y se guarda en minúsculas.
+- La clave (8 a 72 caracteres) se guarda cifrada con **BCrypt** y nunca
+  aparece en las respuestas.
+- Usuario y perfil se guardan en una sola transacción: si falla uno, no se
+  guarda ninguno.
 
 ### Producto — CRUD completo
 
@@ -328,10 +423,53 @@ CREADO ──► PAGADO ──► EN_RUTA ──► ENTREGADO
   queda `APROBADO`.
 - **Contra entrega:** se despacha sin pagar (`CREADO → EN_RUTA`) y se cobra al
   pasar a `ENTREGADO`.
+- **Despachar (`EN_RUTA`) exige una entrega programada** (ver *Entregas*).
 - **Cancelar** devuelve el inventario y deja `RECHAZADO` el pago pendiente.
 - Todo ocurre en una sola transacción. El `UPDATE` del estado incluye
   `WHERE estado = <anterior>`: si dos personas cambian el mismo pedido al
   tiempo, la segunda recibe 409 en lugar de pisar el cambio de la primera.
+
+### Entregas — logística del pedido (JPA)
+
+| Método | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| POST | `/api/pedidos/{id}/entrega` | Programar la entrega: transportador, dirección y fecha | 201 / 400 / 404 / 409 |
+| GET | `/api/pedidos/{id}/entrega` | Consultar la entrega del pedido | 200 / 404 |
+| GET | `/api/transportadores/{id}/entregas?estado=PROGRAMADA` | Agenda del transportador (el `estado` es opcional) | 200 / 400 / 404 |
+
+```json
+{ "idTransportador": 1, "direccion": "Calle 50 # 40-20, Itagui", "fechaProgramada": "2026-12-01" }
+```
+
+- Solo se programa la entrega de un pedido `CREADO` o `PAGADO`, y una sola
+  vez por pedido. La fecha no puede estar en el pasado.
+- Si no se envía `direccion`, se usa la del cliente; si el cliente tampoco
+  tiene, se responde 409.
+- La entrega avanza sola con el pedido:
+
+| El pedido pasa a | La entrega queda |
+|---|---|
+| `EN_RUTA` | `EN_RUTA` |
+| `ENTREGADO` | `ENTREGADA`, con la fecha de entrega |
+| `CANCELADO` | `FALLIDA` |
+
+### Reseñas — calificación de productos (JPA + SQL)
+
+| Método | Ruta | Descripción | Respuesta |
+|---|---|---|---|
+| POST | `/api/productos/{id}/resenas` | Calificar un producto de 1 a 5 | 201 / 400 / 404 / 409 |
+| GET | `/api/productos/{id}/resenas` | Reseñas del producto con promedio y total | 200 / 404 |
+| GET | `/api/clientes/{id}/resenas` | Reseñas escritas por el cliente | 200 / 404 |
+
+```json
+{ "idCliente": 1, "calificacion": 5, "comentario": "Llego fresco y bien empacado" }
+```
+
+- **Solo reseña quien recibió el producto:** el cliente debe tener un pedido
+  `ENTREGADO` que lo incluya. Esta consulta se hace con SQL sobre `pedido` y
+  `detalle_pedido`.
+- Una reseña por cliente y producto.
+- El promedio se muestra con un decimal y es `null` si aún no hay reseñas.
 
 ## 8. Códigos de respuesta
 
@@ -341,9 +479,9 @@ CREADO ──► PAGADO ──► EN_RUTA ──► ENTREGADO
 | 201 | Recurso creado |
 | 204 | Baja lógica o eliminación aplicada |
 | 400 | Datos inválidos, JSON mal formado, parámetro con tipo incorrecto o faltante |
-| 404 | El recurso no existe (producto, categoría, pedido, agricultor, cliente o ruta) |
+| 404 | El recurso no existe (producto, categoría, pedido, usuario, entrega o ruta) |
 | 405 | Método HTTP no permitido en esa ruta |
-| 409 | Se violó una regla de negocio (sin existencias, transición no permitida, nombre repetido…) |
+| 409 | Se violó una regla de negocio (sin existencias, transición no permitida, correo o nombre repetido, despacho sin entrega, reseña sin compra…) o una restricción única de la base |
 | 500 | Error de persistencia (por ejemplo, MySQL apagado) |
 
 Todas las respuestas de error tienen el mismo formato:
@@ -370,7 +508,8 @@ Con la API en ejecución, abrir en el navegador:
 En cada endpoint: **Try it out** → completar los parámetros o el JSON →
 **Execute**. Swagger muestra la respuesta y el código HTTP.
 
-Los endpoints están agrupados en **Productos**, **Categorías** y **Pedidos**.
+Los endpoints están agrupados en **Usuarios**, **Productos**, **Categorías**,
+**Pedidos**, **Entregas** y **Reseñas**.
 Cada uno tiene su descripción, los códigos de respuesta posibles con su
 significado y JSON de ejemplo con datos reales del proyecto. La configuración
 general está en `config/OpenApiConfig.java`.
@@ -406,15 +545,20 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/productos -Content
 ./gradlew test
 ```
 
-33 pruebas de las reglas de negocio, sin base de datos: los repositorios se
-reemplazan por simulaciones con Mockito.
+98 pruebas sin base de datos: los repositorios se reemplazan por
+simulaciones con Mockito. **Cada método público de cada servicio** tiene al
+menos una prueba del caso exitoso y de sus casos de error.
 
-| Clase de prueba | Qué verifica |
-|---|---|
-| `EstadoPedidoTest` | Transiciones permitidas y prohibidas del ciclo de vida |
-| `ProductoServiceImplTest` | Agricultor y categoría inexistentes, producto sin stock, cambio de agricultor |
-| `CategoriaServiceImplTest` | Nombre repetido, renombrar con el mismo nombre, eliminar con y sin productos |
-| `PedidoServiceImplTest` | Cálculo del total, falta de existencias, cliente inexistente, reglas de pago por método, cancelación e historial |
+| Clase de prueba | Pruebas | Qué verifica |
+|---|---|---|
+| `EstadoPedidoTest` | 13 | Transiciones permitidas y prohibidas del ciclo de vida |
+| `ProductoServiceImplTest` | 12 | `crear`, `consultar`, `listar`, `actualizar`, `desactivar`: agricultor y categoría inexistentes, stock 0, cambio de agricultor, 404 |
+| `CategoriaServiceImplTest` | 11 | `crear`, `consultar`, `listar`, `actualizar`, `eliminar`: nombre repetido o de otra categoría, con y sin productos, 404 |
+| `PedidoServiceImplTest` | 17 | `registrarVenta`, `consultar`, `listarPorCliente`, `cambiarEstado`: total, existencias, reglas de pago, cancelación, aviso al seguimiento y bloqueo |
+| `UsuarioServiceImplTest` | 12 | Los 3 registros (rol, correo normalizado, clave cifrada, correo repetido) y las 3 consultas |
+| `EntregaServiceImplTest` | 13 | `programar` (dirección propia o del cliente, pedido ya despachado, entrega repetida, 404), `consultarPorPedido`, `listarPorTransportador` |
+| `SeguimientoEntregaTest` | 10 | Bloqueo del despacho sin entrega y sincronización EN_RUTA / ENTREGADA / FALLIDA |
+| `ResenaServiceImplTest` | 10 | `registrar` (sin compra, reseña repetida, 404), `listarPorProducto`, `listarPorCliente` |
 
 El reporte queda en `build/reports/tests/test/index.html`.
 
@@ -425,13 +569,14 @@ AgrotechProject/
 ├── db/                          Scripts SQL de esquema y datos
 ├── src/main/java/edu/itm/agrotech/
 │   ├── AgrotechApplication.java Punto de entrada de Spring Boot
-│   ├── config/                  Configuración de Swagger (OpenAPI)
+│   ├── config/                  Swagger (OpenAPI) y cifrado de claves (BCrypt)
 │   ├── controller/              Capa de presentación
 │   ├── service/                 Contratos de negocio (interfaces)
 │   │   └── impl/                Reglas de negocio
-│   ├── repository/              Contratos de persistencia (interfaces)
+│   ├── repository/              Contratos de persistencia (interfaces JDBC y JPA)
 │   │   └── jdbc/                Implementación JDBC y EjecutorJdbc
-│   ├── domain/                  Entidades y enumeraciones
+│   ├── domain/                  Entidades de catálogo y ventas, y enumeraciones
+│   ├── entity/                  Entidades JPA con sus relaciones
 │   ├── dto/                     Objetos de transporte y ErrorResponse
 │   └── exception/               Excepciones y manejador global
 ├── src/main/resources/

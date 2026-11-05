@@ -35,9 +35,11 @@ public interface PedidoService {
 
     /**
      * Mueve el pedido por su ciclo de vida y aplica los efectos de cada paso
-     * sobre el pago y el inventario.
+     * sobre el pago, el inventario y la entrega.
      *
+     * @throws edu.itm.agrotech.exception.RecursoNoEncontradoException si el pedido no existe
      * @throws edu.itm.agrotech.exception.ReglaNegocioException si la transicion no esta permitida
+     *         o se intenta despachar sin una entrega programada
      */
     Pedido cambiarEstado(Long id, EstadoPedido nuevoEstado);
 }

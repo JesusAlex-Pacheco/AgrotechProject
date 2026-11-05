@@ -88,6 +88,14 @@ public class PedidoRepositoryJdbc implements PedidoRepository {
             WHERE id_pedido = ?
             """;
 
+    private static final String SQL_CLIENTE_RECIBIO_PRODUCTO = """
+            SELECT 1
+            FROM pedido p
+            JOIN detalle_pedido d ON d.id_pedido = p.id_pedido
+            WHERE p.id_cliente = ? AND d.id_producto = ? AND p.estado = ?
+            LIMIT 1
+            """;
+
     private final EjecutorJdbc jdbc;
 
     public PedidoRepositoryJdbc(EjecutorJdbc jdbc) {
@@ -156,6 +164,15 @@ public class PedidoRepositoryJdbc implements PedidoRepository {
 
         pedidos.forEach(this::cargarDetallesYPago);
         return pedidos;
+    }
+
+    @Override
+    public boolean clienteRecibioProducto(Long idCliente, Long idProducto) {
+        return jdbc.consultarUno(SQL_CLIENTE_RECIBIO_PRODUCTO, sentencia -> {
+            sentencia.setLong(1, idCliente);
+            sentencia.setLong(2, idProducto);
+            sentencia.setString(3, EstadoPedido.ENTREGADO.name());
+        }, fila -> fila.getInt(1), "No fue posible consultar las compras del cliente").isPresent();
     }
 
     // ---------------------------------------------------------------

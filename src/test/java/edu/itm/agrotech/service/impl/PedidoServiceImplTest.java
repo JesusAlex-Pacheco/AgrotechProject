@@ -13,11 +13,13 @@ import edu.itm.agrotech.exception.ReglaNegocioException;
 import edu.itm.agrotech.repository.ClienteRepository;
 import edu.itm.agrotech.repository.PedidoRepository;
 import edu.itm.agrotech.repository.ProductoRepository;
+import edu.itm.agrotech.service.SeguimientoPedido;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,6 +32,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,12 +47,15 @@ class PedidoServiceImplTest {
     private ProductoRepository productoRepository;
     @Mock
     private ClienteRepository clienteRepository;
+    @Mock
+    private SeguimientoPedido seguimiento;
 
     private PedidoServiceImpl servicio;
 
     @BeforeEach
     void preparar() {
-        servicio = new PedidoServiceImpl(pedidoRepository, productoRepository, clienteRepository);
+        servicio = new PedidoServiceImpl(pedidoRepository, productoRepository, clienteRepository,
+                List.of(seguimiento));
     }
 
     @Nested
@@ -58,7 +65,7 @@ class PedidoServiceImplTest {
         @Test
         @DisplayName("Calcula el total con el precio del momento y deja el pago PENDIENTE")
         void calculaTotal() {
-            when(clienteRepository.existe(1L)).thenReturn(true);
+            when(clienteRepository.existsById(1L)).thenReturn(true);
             when(productoRepository.buscarPorId(1L)).thenReturn(Optional.of(producto(1L, "3000", "120")));
             when(productoRepository.buscarPorId(2L)).thenReturn(Optional.of(producto(2L, "1500", "60")));
             when(pedidoRepository.registrarVenta(any())).thenAnswer(inv -> inv.getArgument(0));
@@ -77,7 +84,7 @@ class PedidoServiceImplTest {
         @Test
         @DisplayName("Rechaza la venta si no hay existencias suficientes")
         void sinExistencias() {
-            when(clienteRepository.existe(1L)).thenReturn(true);
+            when(clienteRepository.existsById(1L)).thenReturn(true);
             when(productoRepository.buscarPorId(1L)).thenReturn(Optional.of(producto(1L, "3000", "120")));
 
             assertThatThrownBy(() -> servicio.registrarVenta(new PedidoRequest(1L, MetodoPago.PSE,
@@ -88,14 +95,51 @@ class PedidoServiceImplTest {
         }
 
         @Test
+        @DisplayName("Rechaza un producto que no existe")
+        void productoInexistente() {
+            when(clienteRepository.existsById(1L)).thenReturn(true);
+            when(productoRepository.buscarPorId(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> servicio.registrarVenta(new PedidoRequest(1L, MetodoPago.PSE,
+                    null, List.of(item(99L, "1")))))
+                    .isInstanceOf(RecursoNoEncontradoException.class)
+                    .hasMessage("No existe el producto con id 99");
+            verify(pedidoRepository, never()).registrarVenta(any());
+        }
+
+        @Test
         @DisplayName("Rechaza un cliente que no existe")
         void clienteInexistente() {
-            when(clienteRepository.existe(99L)).thenReturn(false);
+            when(clienteRepository.existsById(99L)).thenReturn(false);
 
             assertThatThrownBy(() -> servicio.registrarVenta(new PedidoRequest(99L, MetodoPago.PSE,
                     null, List.of(item(1L, "1")))))
                     .isInstanceOf(RecursoNoEncontradoException.class)
                     .hasMessage("No existe el cliente con id 99");
+        }
+    }
+
+    @Nested
+    @DisplayName("Consultar")
+    class Consultar {
+
+        @Test
+        @DisplayName("Devuelve el pedido encontrado")
+        void consulta() {
+            Pedido pedido = pedidoEn(EstadoPedido.CREADO, MetodoPago.PSE);
+            when(pedidoRepository.buscarPorId(1L)).thenReturn(Optional.of(pedido));
+
+            assertThat(servicio.consultar(1L)).isSameAs(pedido);
+        }
+
+        @Test
+        @DisplayName("Un pedido inexistente lanza 404")
+        void inexistente() {
+            when(pedidoRepository.buscarPorId(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> servicio.consultar(99L))
+                    .isInstanceOf(RecursoNoEncontradoException.class)
+                    .hasMessage("No existe el pedido con id 99");
         }
     }
 
@@ -173,6 +217,45 @@ class PedidoServiceImplTest {
                     .isInstanceOf(ReglaNegocioException.class)
                     .hasMessage("No se puede pasar un pedido de ENTREGADO a CANCELADO");
         }
+
+        @Test
+        @DisplayName("Un pedido inexistente lanza 404")
+        void inexistente() {
+            when(pedidoRepository.buscarPorId(99L)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> servicio.cambiarEstado(99L, EstadoPedido.PAGADO))
+                    .isInstanceOf(RecursoNoEncontradoException.class);
+        }
+
+        @Test
+        @DisplayName("Consulta al seguimiento antes de guardar y le avisa despues")
+        void notificaAlSeguimiento() {
+            Pedido pedido = pedidoEn(EstadoPedido.PAGADO, MetodoPago.PSE);
+            when(pedidoRepository.buscarPorId(1L)).thenReturn(Optional.of(pedido));
+
+            servicio.cambiarEstado(1L, EstadoPedido.EN_RUTA);
+
+            InOrder orden = inOrder(seguimiento, pedidoRepository);
+            orden.verify(seguimiento).validarCambio(pedido, EstadoPedido.EN_RUTA);
+            orden.verify(pedidoRepository).actualizarEstado(pedido, EstadoPedido.PAGADO, false);
+            orden.verify(seguimiento).registrarCambio(pedido, EstadoPedido.EN_RUTA);
+        }
+
+        @Test
+        @DisplayName("Si el seguimiento lo impide, no se guarda nada")
+        void seguimientoImpideElCambio() {
+            Pedido pedido = pedidoEn(EstadoPedido.PAGADO, MetodoPago.PSE);
+            when(pedidoRepository.buscarPorId(1L)).thenReturn(Optional.of(pedido));
+            doThrow(new ReglaNegocioException("Programe la entrega"))
+                    .when(seguimiento).validarCambio(pedido, EstadoPedido.EN_RUTA);
+
+            assertThatThrownBy(() -> servicio.cambiarEstado(1L, EstadoPedido.EN_RUTA))
+                    .isInstanceOf(ReglaNegocioException.class)
+                    .hasMessage("Programe la entrega");
+            verify(pedidoRepository, never()).actualizarEstado(any(), any(), anyBoolean());
+            verify(seguimiento, never()).registrarCambio(any(), any());
+            assertThat(pedido.getEstado()).isEqualTo(EstadoPedido.PAGADO);
+        }
     }
 
     @Nested
@@ -182,7 +265,7 @@ class PedidoServiceImplTest {
         @Test
         @DisplayName("Rechaza un cliente que no existe")
         void clienteInexistente() {
-            when(clienteRepository.existe(99L)).thenReturn(false);
+            when(clienteRepository.existsById(99L)).thenReturn(false);
 
             assertThatThrownBy(() -> servicio.listarPorCliente(99L, null))
                     .isInstanceOf(RecursoNoEncontradoException.class);
@@ -192,7 +275,7 @@ class PedidoServiceImplTest {
         @Test
         @DisplayName("Delega el filtro por estado al repositorio")
         void filtraPorEstado() {
-            when(clienteRepository.existe(1L)).thenReturn(true);
+            when(clienteRepository.existsById(1L)).thenReturn(true);
             when(pedidoRepository.listarPorCliente(1L, EstadoPedido.ENTREGADO)).thenReturn(List.of());
 
             assertThat(servicio.listarPorCliente(1L, EstadoPedido.ENTREGADO)).isEmpty();

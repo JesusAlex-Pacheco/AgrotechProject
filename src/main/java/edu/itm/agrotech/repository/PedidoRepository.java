@@ -30,4 +30,7 @@ public interface PedidoRepository {
      * estado del pedido desde {@code estadoAnterior}, no se persiste nada.
      */
     void actualizarEstado(Pedido pedido, EstadoPedido estadoAnterior, boolean devolverStock);
+
+    /** Indica si el cliente tiene al menos un pedido ENTREGADO que incluya el producto. */
+    boolean clienteRecibioProducto(Long idCliente, Long idProducto);
 }
