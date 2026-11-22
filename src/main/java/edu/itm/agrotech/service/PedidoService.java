@@ -34,6 +34,22 @@ public interface PedidoService {
     List<Pedido> listarPorCliente(Long idCliente, EstadoPedido estado);
 
     /**
+     * Ventas en las que aparece al menos un producto del agricultor, de la
+     * mas reciente a la mas antigua.
+     *
+     * @param estado filtro opcional; nulo devuelve todos los pedidos
+     * @throws edu.itm.agrotech.exception.RecursoNoEncontradoException si el agricultor no existe
+     */
+    List<Pedido> listarPorAgricultor(Long idAgricultor, EstadoPedido estado);
+
+    /**
+     * Todos los pedidos del sistema, del mas reciente al mas antiguo.
+     *
+     * @param estado filtro opcional; nulo devuelve todos los pedidos
+     */
+    List<Pedido> listarTodos(EstadoPedido estado);
+
+    /**
      * Mueve el pedido por su ciclo de vida y aplica los efectos de cada paso
      * sobre el pago, el inventario y la entrega.
      *

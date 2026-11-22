@@ -55,6 +55,28 @@ public class PedidoRepositoryJdbc implements PedidoRepository {
     private static final String SQL_LISTAR_POR_CLIENTE =
             "SELECT " + COLUMNAS_PEDIDO + " FROM pedido WHERE id_cliente = ?";
 
+    // Subconsulta: los pedidos con al menos una linea de un producto del agricultor
+    private static final String SQL_LISTAR_POR_AGRICULTOR = "SELECT " + COLUMNAS_PEDIDO + """
+             FROM pedido
+            WHERE id_pedido IN (
+                SELECT d.id_pedido
+                FROM detalle_pedido d
+                JOIN producto pr ON pr.id_producto = d.id_producto
+                WHERE pr.id_agricultor = ?)""";
+
+    private static final String SQL_LISTAR_TODOS =
+            "SELECT " + COLUMNAS_PEDIDO + " FROM pedido WHERE 1 = 1";
+
+    private static final String SQL_BUSCAR_ID_CLIENTE =
+            "SELECT id_cliente FROM pedido WHERE id_pedido = ?";
+
+    private static final String SQL_AGRICULTORES_DEL_PEDIDO = """
+            SELECT DISTINCT pr.id_agricultor
+            FROM detalle_pedido d
+            JOIN producto pr ON pr.id_producto = d.id_producto
+            WHERE d.id_pedido = ?
+            """;
+
     private static final String SQL_BUSCAR_DETALLES = """
             SELECT id_detalle, id_pedido, id_producto, cantidad, precio_unitario, subtotal
             FROM detalle_pedido
@@ -151,16 +173,55 @@ public class PedidoRepositoryJdbc implements PedidoRepository {
      */
     @Override
     public List<Pedido> listarPorCliente(Long idCliente, EstadoPedido estado) {
-        String sql = SQL_LISTAR_POR_CLIENTE
+        return listar(SQL_LISTAR_POR_CLIENTE, idCliente, estado, "No fue posible listar los pedidos del cliente");
+    }
+
+    @Override
+    public List<Pedido> listarPorAgricultor(Long idAgricultor, EstadoPedido estado) {
+        return listar(SQL_LISTAR_POR_AGRICULTOR, idAgricultor, estado,
+                "No fue posible listar los pedidos del agricultor");
+    }
+
+    @Override
+    public List<Pedido> listarTodos(EstadoPedido estado) {
+        return listar(SQL_LISTAR_TODOS, null, estado, "No fue posible listar los pedidos");
+    }
+
+    @Override
+    public Optional<Long> buscarIdCliente(Long idPedido) {
+        return jdbc.consultarUno(SQL_BUSCAR_ID_CLIENTE,
+                sentencia -> sentencia.setLong(1, idPedido),
+                fila -> fila.getLong("id_cliente"),
+                "No fue posible consultar el pedido");
+    }
+
+    @Override
+    public List<Long> agricultoresDelPedido(Long idPedido) {
+        return jdbc.consultar(SQL_AGRICULTORES_DEL_PEDIDO,
+                sentencia -> sentencia.setLong(1, idPedido),
+                fila -> fila.getLong("id_agricultor"),
+                "No fue posible consultar los agricultores del pedido");
+    }
+
+    /**
+     * Comun a los listados: agrega el filtro opcional por estado y el orden
+     * (del mas reciente al mas antiguo). {@code id} es el valor del primer
+     * parametro de {@code sqlBase}, o null si no tiene ninguno.
+     */
+    private List<Pedido> listar(String sqlBase, Long id, EstadoPedido estado, String mensajeError) {
+        String sql = sqlBase
                 + (estado != null ? " AND estado = ?" : "")
                 + " ORDER BY fecha DESC, id_pedido DESC";
 
         List<Pedido> pedidos = jdbc.consultar(sql, sentencia -> {
-            sentencia.setLong(1, idCliente);
-            if (estado != null) {
-                sentencia.setString(2, estado.name());
+            int posicion = 1;
+            if (id != null) {
+                sentencia.setLong(posicion++, id);
             }
-        }, this::mapearPedido, "No fue posible listar los pedidos del cliente");
+            if (estado != null) {
+                sentencia.setString(posicion, estado.name());
+            }
+        }, this::mapearPedido, mensajeError);
 
         pedidos.forEach(this::cargarDetallesYPago);
         return pedidos;

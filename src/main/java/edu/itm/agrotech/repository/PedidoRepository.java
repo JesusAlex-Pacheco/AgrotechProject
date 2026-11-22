@@ -23,6 +23,18 @@ public interface PedidoRepository {
      */
     List<Pedido> listarPorCliente(Long idCliente, EstadoPedido estado);
 
+    /** Pedidos que incluyen al menos un producto del agricultor, del mas reciente al mas antiguo. */
+    List<Pedido> listarPorAgricultor(Long idAgricultor, EstadoPedido estado);
+
+    /** Todos los pedidos, del mas reciente al mas antiguo. */
+    List<Pedido> listarTodos(EstadoPedido estado);
+
+    /** Id del cliente que hizo el pedido; vacio si el pedido no existe. */
+    Optional<Long> buscarIdCliente(Long idPedido);
+
+    /** Ids de los agricultores que venden algun producto del pedido. */
+    List<Long> agricultoresDelPedido(Long idPedido);
+
     /**
      * Guarda el nuevo estado del pedido y de su pago como una unica
      * transaccion. Si {@code devolverStock} es verdadero, suma de nuevo al

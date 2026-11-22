@@ -41,3 +41,6 @@ out/
 application-local.properties
 docs/
 pruebas/
+Base de datos/
+# Fotos que suben los agricultores (agrotech.fotos.directorio)
+/fotos/

@@ -9,6 +9,8 @@ import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import io.swagger.v3.oas.models.tags.Tag;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
@@ -24,6 +26,7 @@ import java.util.List;
 public class OpenApiConfig {
 
     private static final String ESQUEMA_ERROR = "ErrorResponse";
+    private static final String ESQUEMA_SEGURIDAD = "token";
 
     @Bean
     public OpenAPI agrotechOpenApi() {
@@ -38,8 +41,19 @@ public class OpenApiConfig {
                                 entregas y resenas.
 
                                 Todas las respuestas de error usan el mismo formato: \
-                                `fecha`, `estado`, `mensaje` y, en errores de validacion, `errores`.""")
+                                `fecha`, `estado`, `mensaje` y, en errores de validacion, `errores`.
+
+                                **Seguridad.** Consultar el catalogo, registrarse e iniciar sesion es \
+                                publico. Lo demas exige el token que devuelve `POST /api/sesiones`: \
+                                copielo en el boton **Authorize**. Sin token se responde 401; con un \
+                                rol sin permiso, o sobre un recurso de otro usuario, 403.""")
                         .contact(new Contact().name("Jesus Pacheco y Sebastian Galeano - ITM")))
+                .components(new Components().addSecuritySchemes(ESQUEMA_SEGURIDAD, new SecurityScheme()
+                        .type(SecurityScheme.Type.HTTP)
+                        .scheme("bearer")
+                        .bearerFormat("JWT")
+                        .description("Token de POST /api/sesiones (sin la palabra Bearer)")))
+                .addSecurityItem(new SecurityRequirement().addList(ESQUEMA_SEGURIDAD))
                 // Grupos de Swagger UI, en el orden en que se muestran. Los
                 // controladores los referencian por nombre con @Tag.
                 .tags(List.of(

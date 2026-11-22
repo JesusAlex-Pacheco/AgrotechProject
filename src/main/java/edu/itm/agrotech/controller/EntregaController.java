@@ -3,6 +3,7 @@ package edu.itm.agrotech.controller;
 import edu.itm.agrotech.domain.EstadoEntrega;
 import edu.itm.agrotech.dto.EntregaRequest;
 import edu.itm.agrotech.dto.EntregaResponse;
+import edu.itm.agrotech.security.ControlAcceso;
 import edu.itm.agrotech.service.EntregaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -28,46 +29,60 @@ import java.util.List;
 public class EntregaController {
 
     private final EntregaService entregaService;
+    private final ControlAcceso acceso;
 
-    public EntregaController(EntregaService entregaService) {
+    public EntregaController(EntregaService entregaService, ControlAcceso acceso) {
         this.entregaService = entregaService;
+        this.acceso = acceso;
     }
 
     @PostMapping("/pedidos/{idPedido}/entrega")
     @Operation(summary = "Programar la entrega de un pedido",
             description = "Asigna transportador, direccion y fecha a un pedido CREADO o PAGADO. Sin direccion, "
                     + "se usa la del cliente. Es requisito para despachar el pedido (pasarlo a EN_RUTA); desde "
-                    + "ahi la entrega avanza sola con el pedido.")
+                    + "ahi la entrega avanza sola con el pedido. La programa un agricultor con productos en el "
+                    + "pedido o el ADMIN.")
     @ApiResponse(responseCode = "201", description = "Entrega programada")
     @ApiResponse(responseCode = "400", description = "Datos invalidos o fecha en el pasado")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "No vende productos en este pedido")
     @ApiResponse(responseCode = "404", description = "El pedido o el transportador no existen")
     @ApiResponse(responseCode = "409", description = "El pedido ya salio, ya tiene entrega o no hay direccion")
     public ResponseEntity<EntregaResponse> programar(
             @Parameter(description = "Id del pedido", example = "1") @PathVariable("idPedido") Long idPedido,
             @Valid @RequestBody EntregaRequest solicitud) {
+        acceso.exigirVendedorDelPedido(idPedido);
         EntregaResponse respuesta = EntregaResponse.desde(entregaService.programar(idPedido, solicitud));
         return ResponseEntity.created(URI.create("/api/pedidos/" + idPedido + "/entrega")).body(respuesta);
     }
 
     @GetMapping("/pedidos/{idPedido}/entrega")
-    @Operation(summary = "Consultar la entrega de un pedido")
+    @Operation(summary = "Consultar la entrega de un pedido",
+            description = "La ven los mismos usuarios que pueden ver el pedido.")
     @ApiResponse(responseCode = "200", description = "Entrega encontrada")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "El pedido no es suyo")
     @ApiResponse(responseCode = "404", description = "El pedido no tiene entrega programada")
     public ResponseEntity<EntregaResponse> consultarPorPedido(
             @Parameter(description = "Id del pedido", example = "1") @PathVariable("idPedido") Long idPedido) {
+        acceso.exigirParticipanteDelPedido(idPedido);
         return ResponseEntity.ok(EntregaResponse.desde(entregaService.consultarPorPedido(idPedido)));
     }
 
     @GetMapping("/transportadores/{id}/entregas")
     @Operation(summary = "Agenda de un transportador",
-            description = "Sus entregas ordenadas por fecha programada. Se puede filtrar por estado.")
+            description = "Sus entregas ordenadas por fecha programada. Se puede filtrar por estado. "
+                    + "La consulta el propio transportador o el ADMIN.")
     @ApiResponse(responseCode = "200", description = "Entregas del transportador (puede estar vacia)")
     @ApiResponse(responseCode = "400", description = "El estado no es valido")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "Es la agenda de otro transportador")
     @ApiResponse(responseCode = "404", description = "El transportador no existe")
     public ResponseEntity<List<EntregaResponse>> listarPorTransportador(
             @Parameter(description = "Id del transportador", example = "1") @PathVariable("id") Long id,
             @Parameter(description = "Filtro opcional por estado")
             @RequestParam(name = "estado", required = false) EstadoEntrega estado) {
+        acceso.exigirTransportadorOAdmin(id);
 
         List<EntregaResponse> entregas = entregaService.listarPorTransportador(id, estado)
                 .stream()
