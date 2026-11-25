@@ -9,6 +9,7 @@ import edu.itm.agrotech.dto.ItemPedidoRequest;
 import edu.itm.agrotech.dto.PedidoRequest;
 import edu.itm.agrotech.exception.RecursoNoEncontradoException;
 import edu.itm.agrotech.exception.ReglaNegocioException;
+import edu.itm.agrotech.repository.AgricultorRepository;
 import edu.itm.agrotech.repository.ClienteRepository;
 import edu.itm.agrotech.repository.PedidoRepository;
 import edu.itm.agrotech.repository.ProductoRepository;
@@ -30,6 +31,7 @@ public class PedidoServiceImpl implements PedidoService {
     private final PedidoRepository pedidoRepository;
     private final ProductoRepository productoRepository;
     private final ClienteRepository clienteRepository;
+    private final AgricultorRepository agricultorRepository;
     private final List<SeguimientoPedido> seguimientos;
 
     /**
@@ -39,10 +41,12 @@ public class PedidoServiceImpl implements PedidoService {
     public PedidoServiceImpl(PedidoRepository pedidoRepository,
                              ProductoRepository productoRepository,
                              ClienteRepository clienteRepository,
+                             AgricultorRepository agricultorRepository,
                              List<SeguimientoPedido> seguimientos) {
         this.pedidoRepository = pedidoRepository;
         this.productoRepository = productoRepository;
         this.clienteRepository = clienteRepository;
+        this.agricultorRepository = agricultorRepository;
         this.seguimientos = seguimientos;
     }
 
@@ -92,6 +96,19 @@ public class PedidoServiceImpl implements PedidoService {
     public List<Pedido> listarPorCliente(Long idCliente, EstadoPedido estado) {
         validarClienteExiste(idCliente);
         return pedidoRepository.listarPorCliente(idCliente, estado);
+    }
+
+    @Override
+    public List<Pedido> listarPorAgricultor(Long idAgricultor, EstadoPedido estado) {
+        if (!agricultorRepository.existsById(idAgricultor)) {
+            throw new RecursoNoEncontradoException("No existe el agricultor con id " + idAgricultor);
+        }
+        return pedidoRepository.listarPorAgricultor(idAgricultor, estado);
+    }
+
+    @Override
+    public List<Pedido> listarTodos(EstadoPedido estado) {
+        return pedidoRepository.listarTodos(estado);
     }
 
     /**

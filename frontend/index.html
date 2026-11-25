@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <title>AgroTech</title>
+    <!-- Icono de la pestaña: el navegador elige segun el tema claro u oscuro del sistema -->
+    <link rel="icon" type="image/png" href="favicon-claro.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/png" href="favicon-oscuro.png" media="(prefers-color-scheme: dark)" />
+
+    <!-- Meta Tags-->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#2e7d32" />
+    <meta name="description" content="AgroTech: del campo a tu mesa, sin intermediarios." />
+
+    <!-- Performance hints for Vite -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <!-- this is to resolve issue in old safari browser in tablet -->
+    <script src="https://cdn.jsdelivr.net/npm/resize-observer-polyfill@1.5.1/dist/ResizeObserver.min.js"></script>
+  </head>
+
+  <body>
+    <noscript>Debe activar JavaScript para usar AgroTech.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/src/index.jsx"></script>
+  </body>
+</html>

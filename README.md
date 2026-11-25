@@ -23,7 +23,7 @@ Integrantes: **Jesús Pacheco** · **Sebastián Galeano**
 | Casos de negocio | Registro de usuarios por rol, venta con descuento de inventario, ciclo de vida del pedido, programación y seguimiento de entregas, historial de compras y reseñas de productos recibidos |
 | Documentación de la API | Swagger UI (springdoc-openapi) en `/swagger-ui.html`: las 26 operaciones con descripción, códigos de respuesta, ejemplos y formato de error |
 | Manejo de errores | `ManejadorGlobalErrores`: un formato único (`ErrorResponse`) para 400, 404, 405, 409 y 500 |
-| Pruebas | 98 pruebas unitarias; cubren todos los métodos públicos de los servicios (`src/test`) |
+| Pruebas | 156 pruebas automáticas: todos los métodos públicos de los servicios y la seguridad de la API (`src/test`) |
 | Trabajo en equipo | Commits de ambos integrantes |
 | Estrategia de ramas | Git Flow simplificado — ver sección 12 |
 
@@ -262,8 +262,27 @@ Variables disponibles: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`,
 
 ## 6. Ejecutar la API
 
-Desde VS Code: abrir `AgrotechApplication.java` y pulsar **Run** sobre el
-método `main`.
+**Todo de una vez (Windows):** doble clic en `iniciar.bat`, en la raíz del
+proyecto. Arranca el backend en su propia ventana, espera a que responda y
+luego arranca el frontend, que abre el navegador. La primera vez también
+instala las dependencias del frontend. Para detener todo, se cierran las
+ventanas "AgroTech - Backend" y "AgroTech - Frontend". Si el backend no
+arranca (lo más común: MySQL apagado), el script lo avisa y la ventana del
+backend muestra el error.
+
+**Puertos:** se cambian en `frontend/.env`.
+
+| Variable | Por defecto | Qué define |
+|---|---|---|
+| `FRONTEND_PORT` | `3000` | Puerto del frontend |
+| `VITE_BACKEND_URL` | `http://localhost:8080` | Dónde está el backend; `iniciar.bat` lo arranca en ese puerto |
+
+Si el backend se arranca a mano en otro puerto, se usa la variable de
+entorno `PORT` (por ejemplo `$env:PORT = 8081; .\gradlew.bat bootRun`) y se
+actualiza `VITE_BACKEND_URL` para que el frontend lo encuentre.
+
+**Solo la API**, desde VS Code: abrir `AgrotechApplication.java` y pulsar
+**Run** sobre el método `main`.
 
 Desde la terminal:
 
@@ -281,6 +300,33 @@ En la consola, estas líneas confirman que arrancó bien:
 Tomcat started on port 8080 (http) with context path '/'
 Started AgrotechApplication in X seconds
 ```
+
+### 6.1 Seguridad: sesiones y roles
+
+La API usa **Spring Security** con tokens **JWT**:
+
+| Quién | Qué puede hacer |
+|---|---|
+| Cualquiera (sin sesión) | Ver productos, categorías, reseñas y perfiles de agricultor; registrarse; iniciar sesión |
+| CLIENTE | Comprar **a su nombre**, ver y cancelar **sus** pedidos, reseñar lo que recibió |
+| AGRICULTOR | Publicar, editar y retirar **sus** productos; gestionar categorías; en los pedidos con sus productos: confirmar el pago, programar la entrega, despachar y cancelar |
+| TRANSPORTADOR | Ver **su** agenda y marcar como entregados **sus** pedidos en ruta |
+| ADMIN | Todo lo anterior sobre cualquier recurso, salvo comprar o reseñar por un cliente |
+
+- `POST /api/sesiones` devuelve un `token` que vence en 8 horas. Las demás
+  rutas lo exigen en la cabecera `Authorization: Bearer <token>` (en Swagger,
+  botón **Authorize**). Sin token responden **401**; con un rol sin permiso o
+  sobre un recurso de otro usuario, **403**.
+- Las reglas por rol están en `config/SeguridadConfig`; las de "el recurso es
+  suyo" en `security/ControlAcceso`.
+- **Clave de firma:** variable `JWT_SECRET` (mínimo 32 caracteres). Sin ella se
+  genera una aleatoria al arrancar y las sesiones abiertas se cierran cada vez
+  que se reinicia la API.
+- **Administrador:** el registro público nunca crea administradores. Al
+  arrancar, `config/AdministradorInicial` crea la cuenta `admin@agrotech.co`
+  si no existe, con el hash BCrypt de `agrotech.admin.clave-hash`. La clave en
+  texto plano no está en el repositorio: se comparte por un canal privado. Para
+  usar otra, se genera su hash BCrypt y se define `ADMIN_CLAVE_HASH`.
 
 ## 7. Endpoints
 
@@ -517,48 +563,74 @@ general está en `config/OpenApiConfig.java`.
 ### 9.2 Archivo `requests.http`
 
 Contiene todas las peticiones listas para ejecutar, incluidos los casos de
-error 400 y 409. Se usa desde IntelliJ IDEA o desde la extensión
-**REST Client** de VS Code (enlace *Send Request* sobre cada petición).
-También sirve como evidencia de las pruebas ante el docente.
+error 400, 401, 403 y 409. Se usa con la extensión **REST Client** de VS Code
+(enlace *Send Request* sobre cada petición). También sirve como evidencia de
+las pruebas ante el docente.
+
+Las peticiones se ejecutan **en orden**: primero se registran los usuarios de
+prueba, luego se inicia sesión con cada rol y el archivo guarda los tokens y
+los ids que devuelve el backend (finca, producto, pedido) para usarlos en las
+peticiones siguientes. La clave del administrador no se escribe en el archivo:
+se lee de un `.env` en la raíz del proyecto (ignorado por git) con la línea
+`ADMIN_CLAVE=...`.
 
 ### 9.3 Terminal
 
-curl:
+Las rutas que modifican datos exigen el token de sesión: primero se inicia
+sesión y luego se envía el token en la cabecera `Authorization`.
+
+curl (comprar como cliente):
 
 ```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/sesiones \
+  -H "Content-Type: application/json" \
+  -d '{"correo":"pedro@agrotech.co","clave":"Campo2026*"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
 curl -X POST http://localhost:8080/api/pedidos \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"idCliente":1,"metodoPago":"PSE","costoEnvio":6000,
        "items":[{"idProducto":1,"cantidad":3}]}'
 ```
 
-PowerShell:
+PowerShell (publicar un producto como agricultor):
 
 ```powershell
-$body = @{ idAgricultor=1; idCategoria=1; nombre="Mango de azucar"; precio=4200; unidadMedida="kg"; stock=50 } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/productos -ContentType "application/json" -Body $body
+$sesion = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/sesiones -ContentType "application/json" `
+  -Body (@{ correo="marta@agrotech.co"; clave="Campo2026*" } | ConvertTo-Json)
+$body = @{ idAgricultor=$sesion.idPerfil; idCategoria=1; nombre="Mango de azucar"; precio=4200; unidadMedida="kg"; stock=50 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/productos -ContentType "application/json" `
+  -Headers @{ Authorization = "Bearer $($sesion.token)" } -Body $body
 ```
 
-### 9.4 Pruebas unitarias
+### 9.4 Pruebas automáticas
 
 ```bash
 ./gradlew test
 ```
 
-98 pruebas sin base de datos: los repositorios se reemplazan por
+156 pruebas sin base de datos: los repositorios se reemplazan por
 simulaciones con Mockito. **Cada método público de cada servicio** tiene al
-menos una prueba del caso exitoso y de sus casos de error.
+menos una prueba del caso exitoso y de sus casos de error. Además,
+`SeguridadApiTest` llama la API por HTTP (MockMvc) con tokens reales para
+comprobar quién puede hacer qué: sin sesión 401, con el rol equivocado o a
+nombre de otro 403, y con el permiso correcto la solicitud pasa.
 
 | Clase de prueba | Pruebas | Qué verifica |
 |---|---|---|
 | `EstadoPedidoTest` | 13 | Transiciones permitidas y prohibidas del ciclo de vida |
 | `ProductoServiceImplTest` | 12 | `crear`, `consultar`, `listar`, `actualizar`, `desactivar`: agricultor y categoría inexistentes, stock 0, cambio de agricultor, 404 |
 | `CategoriaServiceImplTest` | 11 | `crear`, `consultar`, `listar`, `actualizar`, `eliminar`: nombre repetido o de otra categoría, con y sin productos, 404 |
-| `PedidoServiceImplTest` | 17 | `registrarVenta`, `consultar`, `listarPorCliente`, `cambiarEstado`: total, existencias, reglas de pago, cancelación, aviso al seguimiento y bloqueo |
-| `UsuarioServiceImplTest` | 12 | Los 3 registros (rol, correo normalizado, clave cifrada, correo repetido) y las 3 consultas |
+| `PedidoServiceImplTest` | 20 | `registrarVenta`, `consultar`, `listarPorCliente`, `listarPorAgricultor`, `listarTodos`, `cambiarEstado`: total, existencias, reglas de pago, cancelación, aviso al seguimiento y bloqueo |
+| `UsuarioServiceImplTest` | 18 | Los 3 registros (rol, correo normalizado, clave cifrada, correo repetido), las consultas, la lista de transportadores e iniciar sesión |
 | `EntregaServiceImplTest` | 13 | `programar` (dirección propia o del cliente, pedido ya despachado, entrega repetida, 404), `consultarPorPedido`, `listarPorTransportador` |
 | `SeguimientoEntregaTest` | 10 | Bloqueo del despacho sin entrega y sincronización EN_RUTA / ENTREGADA / FALLIDA |
 | `ResenaServiceImplTest` | 10 | `registrar` (sin compra, reseña repetida, 404), `listarPorProducto`, `listarPorCliente` |
+| `FotoProductoServiceImplTest` | 7 | Subir y quitar la foto: formato real del archivo (JPG, PNG, WEBP), archivo que no es imagen, reemplazo y borrado del archivo anterior, 404 |
+| `SeguridadApiTest` | 21 | La API por HTTP con tokens reales: rutas públicas, 401 (sin token, falsificado, vencido), 403 (rol equivocado o a nombre de otro), 400 y casos permitidos |
+| `ControlAccesoTest` | 12 | Que cada usuario actúe solo sobre lo suyo: su perfil, sus productos, sus pedidos y los cambios de estado que le tocan |
+| `ServicioTokensTest` | 5 | El token lleva usuario, rol y perfil; se rechaza si está vencido o firmado con otra clave; un `JWT_SECRET` corto impide arrancar |
+| `AdministradorInicialTest` | 4 | La cuenta de administrador se crea desde la configuración, sin duplicarse ni tomar el correo de otro usuario, y solo con un hash BCrypt |
 
 El reporte queda en `build/reports/tests/test/index.html`.
 
@@ -584,6 +656,7 @@ AgrotechProject/
 ├── src/test/java/edu/itm/agrotech/
 │   ├── domain/                  Pruebas del ciclo de vida
 │   └── service/impl/            Pruebas de las reglas de negocio
+├── iniciar.bat / iniciar.ps1    Arranca backend y frontend en orden
 ├── requests.http                Pruebas de la API
 ├── build.gradle                 Dependencias y configuración de Gradle
 └── settings.gradle
@@ -594,7 +667,7 @@ AgrotechProject/
 | Comando | Para qué |
 |---|---|
 | `./gradlew build` | Compila, ejecuta las pruebas y genera el `.jar` en `build/libs/` |
-| `./gradlew test` | Ejecuta solo las pruebas unitarias |
+| `./gradlew test` | Ejecuta las pruebas automáticas |
 | `./gradlew build --refresh-dependencies` | Igual, pero vuelve a descargar las dependencias |
 | `./gradlew bootRun` | Levanta la API en el puerto 8080 |
 | `./gradlew clean` | Borra la carpeta `build/` |

@@ -6,6 +6,7 @@ import edu.itm.agrotech.dto.RegistroAgricultorRequest;
 import edu.itm.agrotech.dto.RegistroClienteRequest;
 import edu.itm.agrotech.dto.RegistroTransportadorRequest;
 import edu.itm.agrotech.dto.TransportadorResponse;
+import edu.itm.agrotech.security.ControlAcceso;
 import edu.itm.agrotech.service.UsuarioService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.util.List;
 
 /** Registro y consulta de los actores del sistema: agricultores, clientes y transportadores. */
 @RestController
@@ -29,9 +31,11 @@ import java.net.URI;
 public class UsuarioController {
 
     private final UsuarioService usuarioService;
+    private final ControlAcceso acceso;
 
-    public UsuarioController(UsuarioService usuarioService) {
+    public UsuarioController(UsuarioService usuarioService, ControlAcceso acceso) {
         this.usuarioService = usuarioService;
+        this.acceso = acceso;
     }
 
     @PostMapping("/agricultores")
@@ -68,11 +72,14 @@ public class UsuarioController {
     }
 
     @GetMapping("/clientes/{id}")
-    @Operation(summary = "Consultar un cliente")
+    @Operation(summary = "Consultar un cliente", description = "Lo consulta el propio cliente o el ADMIN.")
     @ApiResponse(responseCode = "200", description = "Cliente encontrado")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "Es la cuenta de otro cliente")
     @ApiResponse(responseCode = "404", description = "El cliente no existe")
     public ResponseEntity<ClienteResponse> consultarCliente(
             @Parameter(description = "Id del cliente", example = "1") @PathVariable("id") Long id) {
+        acceso.exigirClienteOAdmin(id);
         return ResponseEntity.ok(ClienteResponse.desde(usuarioService.consultarCliente(id)));
     }
 
@@ -89,9 +96,23 @@ public class UsuarioController {
         return ResponseEntity.created(URI.create("/api/transportadores/" + respuesta.id())).body(respuesta);
     }
 
+    @GetMapping("/transportadores")
+    @Operation(summary = "Listar los transportadores",
+            description = "En orden alfabetico, para asignarlos a una entrega. Solo AGRICULTOR o ADMIN.")
+    @ApiResponse(responseCode = "200", description = "Transportadores (puede estar vacia)")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "No es agricultor ni administrador")
+    public ResponseEntity<List<TransportadorResponse>> listarTransportadores() {
+        return ResponseEntity.ok(usuarioService.listarTransportadores()
+                .stream()
+                .map(TransportadorResponse::desde)
+                .toList());
+    }
+
     @GetMapping("/transportadores/{id}")
-    @Operation(summary = "Consultar un transportador")
+    @Operation(summary = "Consultar un transportador", description = "Requiere sesion.")
     @ApiResponse(responseCode = "200", description = "Transportador encontrado")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
     @ApiResponse(responseCode = "404", description = "El transportador no existe")
     public ResponseEntity<TransportadorResponse> consultarTransportador(
             @Parameter(description = "Id del transportador", example = "1") @PathVariable("id") Long id) {

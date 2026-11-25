@@ -1,6 +1,7 @@
 package edu.itm.agrotech.service.impl;
 
 import edu.itm.agrotech.domain.Rol;
+import edu.itm.agrotech.domain.SesionUsuario;
 import edu.itm.agrotech.dto.DatosUsuarioRequest;
 import edu.itm.agrotech.dto.RegistroAgricultorRequest;
 import edu.itm.agrotech.dto.RegistroClienteRequest;
@@ -9,6 +10,7 @@ import edu.itm.agrotech.entity.Agricultor;
 import edu.itm.agrotech.entity.Cliente;
 import edu.itm.agrotech.entity.Transportador;
 import edu.itm.agrotech.entity.Usuario;
+import edu.itm.agrotech.exception.CredencialesInvalidasException;
 import edu.itm.agrotech.exception.RecursoNoEncontradoException;
 import edu.itm.agrotech.exception.ReglaNegocioException;
 import edu.itm.agrotech.repository.AgricultorRepository;
@@ -20,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -97,6 +100,37 @@ public class UsuarioServiceImpl implements UsuarioService {
     public Transportador consultarTransportador(Long id) {
         return transportadorRepository.buscarConUsuario(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("No existe el transportador con id " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Transportador> listarTransportadores() {
+        return transportadorRepository.listarConUsuario();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SesionUsuario iniciarSesion(String correo, String clave) {
+        Usuario usuario = usuarioRepository.findByCorreoIgnoreCase(correo.trim())
+                .orElseThrow(CredencialesInvalidasException::new);
+
+        // BCrypt compara la clave escrita con el hash guardado; la clave nunca se descifra
+        if (!codificadorDeClaves.matches(clave, usuario.getClaveHash())) {
+            throw new CredencialesInvalidasException();
+        }
+
+        return new SesionUsuario(usuario.getId(), usuario.getNombre(), usuario.getCorreo(),
+                usuario.getRol(), idPerfil(usuario));
+    }
+
+    /** Id del agricultor, cliente o transportador del usuario; null para ADMIN. */
+    private Long idPerfil(Usuario usuario) {
+        return switch (usuario.getRol()) {
+            case AGRICULTOR -> agricultorRepository.buscarIdPorUsuario(usuario.getId()).orElse(null);
+            case CLIENTE -> clienteRepository.buscarIdPorUsuario(usuario.getId()).orElse(null);
+            case TRANSPORTADOR -> transportadorRepository.buscarIdPorUsuario(usuario.getId()).orElse(null);
+            case ADMIN -> null;
+        };
     }
 
     /** Datos de acceso comunes a los tres registros: correo unico y clave cifrada. */

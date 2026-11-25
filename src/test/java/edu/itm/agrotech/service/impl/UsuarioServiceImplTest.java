@@ -1,6 +1,7 @@
 package edu.itm.agrotech.service.impl;
 
 import edu.itm.agrotech.domain.Rol;
+import edu.itm.agrotech.domain.SesionUsuario;
 import edu.itm.agrotech.dto.DatosUsuarioRequest;
 import edu.itm.agrotech.dto.RegistroAgricultorRequest;
 import edu.itm.agrotech.dto.RegistroClienteRequest;
@@ -8,6 +9,8 @@ import edu.itm.agrotech.dto.RegistroTransportadorRequest;
 import edu.itm.agrotech.entity.Agricultor;
 import edu.itm.agrotech.entity.Cliente;
 import edu.itm.agrotech.entity.Transportador;
+import edu.itm.agrotech.entity.Usuario;
+import edu.itm.agrotech.exception.CredencialesInvalidasException;
 import edu.itm.agrotech.exception.RecursoNoEncontradoException;
 import edu.itm.agrotech.exception.ReglaNegocioException;
 import edu.itm.agrotech.repository.AgricultorRepository;
@@ -23,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -208,6 +212,96 @@ class UsuarioServiceImplTest {
                     .isInstanceOf(RecursoNoEncontradoException.class)
                     .hasMessage("No existe el transportador con id 99");
         }
+    }
+
+    @Nested
+    @DisplayName("Iniciar sesion")
+    class IniciarSesion {
+
+        @Test
+        @DisplayName("Agricultor con clave correcta: devuelve sus datos y el id de su finca")
+        void agricultor() {
+            Usuario usuario = usuario(Rol.AGRICULTOR);
+            when(usuarioRepository.findByCorreoIgnoreCase("marta@agrotech.co")).thenReturn(Optional.of(usuario));
+            when(codificadorDeClaves.matches("Campo2026*", "hash-bcrypt")).thenReturn(true);
+            when(agricultorRepository.buscarIdPorUsuario(7L)).thenReturn(Optional.of(3L));
+
+            SesionUsuario sesion = servicio.iniciarSesion(" marta@agrotech.co ", "Campo2026*");
+
+            assertThat(sesion.idUsuario()).isEqualTo(7L);
+            assertThat(sesion.nombre()).isEqualTo("Marta Lucia Ospina");
+            assertThat(sesion.rol()).isEqualTo(Rol.AGRICULTOR);
+            assertThat(sesion.idPerfil()).isEqualTo(3L);
+        }
+
+        @Test
+        @DisplayName("Cliente y transportador reciben el id de su propio perfil")
+        void clienteYTransportador() {
+            when(codificadorDeClaves.matches(any(), any())).thenReturn(true);
+
+            Usuario cliente = usuario(Rol.CLIENTE);
+            when(usuarioRepository.findByCorreoIgnoreCase("cliente@agrotech.co")).thenReturn(Optional.of(cliente));
+            when(clienteRepository.buscarIdPorUsuario(7L)).thenReturn(Optional.of(11L));
+            assertThat(servicio.iniciarSesion("cliente@agrotech.co", "Campo2026*").idPerfil()).isEqualTo(11L);
+
+            Usuario transportador = usuario(Rol.TRANSPORTADOR);
+            when(usuarioRepository.findByCorreoIgnoreCase("ruta@agrotech.co")).thenReturn(Optional.of(transportador));
+            when(transportadorRepository.buscarIdPorUsuario(7L)).thenReturn(Optional.of(21L));
+            assertThat(servicio.iniciarSesion("ruta@agrotech.co", "Campo2026*").idPerfil()).isEqualTo(21L);
+        }
+
+        @Test
+        @DisplayName("ADMIN no tiene perfil: idPerfil es null")
+        void admin() {
+            when(usuarioRepository.findByCorreoIgnoreCase("admin@agrotech.co")).thenReturn(Optional.of(usuario(Rol.ADMIN)));
+            when(codificadorDeClaves.matches("Campo2026*", "hash-bcrypt")).thenReturn(true);
+
+            assertThat(servicio.iniciarSesion("admin@agrotech.co", "Campo2026*").idPerfil()).isNull();
+            verify(agricultorRepository, never()).buscarIdPorUsuario(any());
+        }
+
+        @Test
+        @DisplayName("Clave incorrecta lanza CredencialesInvalidasException")
+        void claveIncorrecta() {
+            when(usuarioRepository.findByCorreoIgnoreCase("marta@agrotech.co")).thenReturn(Optional.of(usuario(Rol.AGRICULTOR)));
+            when(codificadorDeClaves.matches("otra", "hash-bcrypt")).thenReturn(false);
+
+            assertThatThrownBy(() -> servicio.iniciarSesion("marta@agrotech.co", "otra"))
+                    .isInstanceOf(CredencialesInvalidasException.class)
+                    .hasMessage("Correo o clave incorrectos");
+            verify(agricultorRepository, never()).buscarIdPorUsuario(any());
+        }
+
+        @Test
+        @DisplayName("Correo no registrado: mismo mensaje que la clave incorrecta")
+        void correoInexistente() {
+            when(usuarioRepository.findByCorreoIgnoreCase("nadie@agrotech.co")).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> servicio.iniciarSesion("nadie@agrotech.co", "Campo2026*"))
+                    .isInstanceOf(CredencialesInvalidasException.class)
+                    .hasMessage("Correo o clave incorrectos");
+            verify(codificadorDeClaves, never()).matches(any(), any());
+        }
+    }
+
+    @Test
+    @DisplayName("Lista los transportadores con su usuario")
+    void listaTransportadores() {
+        Transportador transportador = new Transportador();
+        transportador.setId(4L);
+        when(transportadorRepository.listarConUsuario()).thenReturn(List.of(transportador));
+
+        assertThat(servicio.listarTransportadores()).containsExactly(transportador);
+    }
+
+    private static Usuario usuario(Rol rol) {
+        Usuario usuario = new Usuario();
+        usuario.setId(7L);
+        usuario.setNombre("Marta Lucia Ospina");
+        usuario.setCorreo("marta@agrotech.co");
+        usuario.setClaveHash("hash-bcrypt");
+        usuario.setRol(rol);
+        return usuario;
     }
 
     private static DatosUsuarioRequest datos(String correo) {

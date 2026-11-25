@@ -1,7 +1,25 @@
-### Variables
-@host = http://localhost:8080
+###############################################################################
+# Pruebas de la API de AgroTech
+#
+# Se usa con la extension REST Client de VS Code: enlace "Send Request" sobre
+# cada peticion. EJECUTELAS EN ORDEN, de arriba hacia abajo: los inicios de
+# sesion guardan el token y los ids (de la finca, del producto, del pedido...)
+# que usan las peticiones siguientes.
+#
+# Clave del administrador: no se escribe aqui (este archivo va al repositorio).
+# Cree un archivo .env en esta misma carpeta (ya esta en .gitignore) con:
+#     ADMIN_CLAVE=la-clave-del-administrador
+###############################################################################
 
-### USUARIOS - registrar un agricultor (usuario + finca en una transaccion JPA)
+@host = http://localhost:8080
+@clave = Campo2026*
+
+###############################################################################
+# 1. REGISTRO (publico, sin sesion)
+# Si ya los registro antes, responden 409 (correo repetido): siga igual.
+###############################################################################
+
+### Registrar un agricultor (usuario + finca en una transaccion JPA)
 POST {{host}}/api/agricultores
 Content-Type: application/json
 
@@ -9,7 +27,7 @@ Content-Type: application/json
   "usuario": {
     "nombre": "Marta Lucia Ospina",
     "correo": "marta@agrotech.co",
-    "clave": "Campo2026*",
+    "clave": "{{clave}}",
     "telefono": "3107778899"
   },
   "nombreFinca": "Finca El Roble",
@@ -17,36 +35,36 @@ Content-Type: application/json
   "vereda": "Llanogrande"
 }
 
-### USUARIOS - ERROR esperado 409: el correo ya existe (sin importar mayusculas)
-POST {{host}}/api/agricultores
-Content-Type: application/json
-
-{
-  "usuario": { "nombre": "Otra", "correo": "MARTA@agrotech.co", "clave": "Campo2026*" },
-  "nombreFinca": "Finca X",
-  "municipio": "Rionegro"
-}
-
-### USUARIOS - registrar un cliente
+### Registrar un cliente
 POST {{host}}/api/clientes
 Content-Type: application/json
 
 {
-  "usuario": { "nombre": "Pedro Gil", "correo": "pedro@agrotech.co", "clave": "Campo2026*" },
+  "usuario": { "nombre": "Pedro Gil", "correo": "pedro@agrotech.co", "clave": "{{clave}}" },
   "direccion": "Carrera 43A # 1-50, Medellin"
 }
 
-### USUARIOS - registrar un transportador (necesario para programar entregas)
+### Registrar un transportador (necesario para programar entregas)
 POST {{host}}/api/transportadores
 Content-Type: application/json
 
 {
-  "usuario": { "nombre": "Carlos Ruta", "correo": "carlos@agrotech.co", "clave": "Campo2026*" },
+  "usuario": { "nombre": "Carlos Ruta", "correo": "carlos@agrotech.co", "clave": "{{clave}}" },
   "placa": "abc123",
   "tipoVehiculo": "Camioneta"
 }
 
-### USUARIOS - ERROR esperado 400: errores de validacion en el objeto anidado
+### ERROR esperado 409: el correo ya existe (sin importar mayusculas)
+POST {{host}}/api/agricultores
+Content-Type: application/json
+
+{
+  "usuario": { "nombre": "Otra", "correo": "MARTA@agrotech.co", "clave": "{{clave}}" },
+  "nombreFinca": "Finca X",
+  "municipio": "Rionegro"
+}
+
+### ERROR esperado 400: errores de validacion en el objeto anidado
 POST {{host}}/api/clientes
 Content-Type: application/json
 
@@ -54,116 +72,158 @@ Content-Type: application/json
   "usuario": { "nombre": "", "correo": "no-es-correo", "clave": "123" }
 }
 
-### USUARIOS - consultar
-GET {{host}}/api/clientes/1
+###############################################################################
+# 2. INICIAR SESION
+# Cada respuesta trae { token, expira, rol, idPerfil, ... }. Las variables de
+# abajo los toman de la ultima respuesta de cada inicio de sesion.
+###############################################################################
 
-### USUARIOS - consultar un transportador
-GET {{host}}/api/transportadores/1
+# @name sesionAgricultor
+POST {{host}}/api/sesiones
+Content-Type: application/json
 
-### CREATE - crear un producto
+{ "correo": "marta@agrotech.co", "clave": "{{clave}}" }
+
+###
+# @name sesionCliente
+POST {{host}}/api/sesiones
+Content-Type: application/json
+
+{ "correo": "pedro@agrotech.co", "clave": "{{clave}}" }
+
+###
+# @name sesionTransportador
+POST {{host}}/api/sesiones
+Content-Type: application/json
+
+{ "correo": "carlos@agrotech.co", "clave": "{{clave}}" }
+
+###
+# @name sesionAdmin
+POST {{host}}/api/sesiones
+Content-Type: application/json
+
+{ "correo": "admin@agrotech.co", "clave": "{{$dotenv ADMIN_CLAVE}}" }
+
+### ERROR esperado 401: clave incorrecta
+POST {{host}}/api/sesiones
+Content-Type: application/json
+
+{ "correo": "marta@agrotech.co", "clave": "no-es-la-clave" }
+
+###
+
+@tokenAgricultor = {{sesionAgricultor.response.body.token}}
+@idAgricultor = {{sesionAgricultor.response.body.idPerfil}}
+@tokenCliente = {{sesionCliente.response.body.token}}
+@idCliente = {{sesionCliente.response.body.idPerfil}}
+@tokenTransportador = {{sesionTransportador.response.body.token}}
+@idTransportador = {{sesionTransportador.response.body.idPerfil}}
+@tokenAdmin = {{sesionAdmin.response.body.token}}
+
+###############################################################################
+# 3. SEGURIDAD: lo que NO se puede hacer
+###############################################################################
+
+### ERROR esperado 401: crear un producto sin iniciar sesion
 POST {{host}}/api/productos
 Content-Type: application/json
 
+{ "idAgricultor": {{idAgricultor}}, "idCategoria": 1, "nombre": "Banano", "precio": 1800, "unidadMedida": "kg", "stock": 10 }
+
+### ERROR esperado 401: un token inventado
+GET {{host}}/api/pedidos
+Authorization: Bearer esto-no-es-un-token
+
+### ERROR esperado 403: un cliente no puede publicar productos
+POST {{host}}/api/productos
+Authorization: Bearer {{tokenCliente}}
+Content-Type: application/json
+
+{ "idAgricultor": {{idAgricultor}}, "idCategoria": 1, "nombre": "Banano", "precio": 1800, "unidadMedida": "kg", "stock": 10 }
+
+### ERROR esperado 403: un agricultor no puede publicar a nombre de otra finca
+POST {{host}}/api/productos
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: application/json
+
+{ "idAgricultor": 999, "idCategoria": 1, "nombre": "Banano", "precio": 1800, "unidadMedida": "kg", "stock": 10 }
+
+### ERROR esperado 403: un cliente no puede ver todos los pedidos (solo el ADMIN)
+GET {{host}}/api/pedidos
+Authorization: Bearer {{tokenCliente}}
+
+### ERROR esperado 403: un agricultor no puede comprar
+POST {{host}}/api/pedidos
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: application/json
+
+{ "idCliente": {{idCliente}}, "metodoPago": "PSE", "items": [ { "idProducto": 1, "cantidad": 1 } ] }
+
+###############################################################################
+# 4. CATEGORIAS (consultar es publico; crear y editar: AGRICULTOR o ADMIN)
+###############################################################################
+
+### Listar
+GET {{host}}/api/categorias
+
+### Crear (si ya existe responde 409; siga igual)
+# @name categoria
+POST {{host}}/api/categorias
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: application/json
+
+{ "nombre": "Granos" }
+
+### Renombrar
+PUT {{host}}/api/categorias/{{categoria.response.body.id}}
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: application/json
+
+{ "nombre": "Granos y cereales" }
+
+### ERROR esperado 409: nombre repetido
+POST {{host}}/api/categorias
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: application/json
+
+{ "nombre": "Granos y cereales" }
+
+### Eliminar (solo si no tiene productos)
+DELETE {{host}}/api/categorias/{{categoria.response.body.id}}
+Authorization: Bearer {{tokenAdmin}}
+
+###############################################################################
+# 5. PRODUCTOS (consultar es publico; publicar y editar: el agricultor dueno o el ADMIN)
+###############################################################################
+
+### Publicar un producto en la finca del agricultor
+# @name producto
+POST {{host}}/api/productos
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: application/json
+
 {
-  "idAgricultor": 1,
+  "idAgricultor": {{idAgricultor}},
   "idCategoria": 1,
   "nombre": "Mango de azucar",
   "descripcion": "Cosecha de la semana",
   "precio": 4200.00,
   "unidadMedida": "kg",
-  "stock": 50.00,
-  "fotoUrl": null
+  "stock": 50.00
 }
 
-### LIST - listar todo el catalogo
-GET {{host}}/api/productos
+###
+@idProducto = {{producto.response.body.id}}
 
-### LIST - filtrar por categoria y nombre
-GET {{host}}/api/productos?idCategoria=1&nombre=agua
-
-### READ - consultar un producto
-GET {{host}}/api/productos/1
-
-### UPDATE - actualizar precio y stock
-PUT {{host}}/api/productos/1
-Content-Type: application/json
-
-{
-  "idAgricultor": 1,
-  "idCategoria": 1,
-  "nombre": "Aguacate Hass",
-  "descripcion": "Cosechado en San Antonio de Prado",
-  "precio": 3500.00,
-  "unidadMedida": "kg",
-  "stock": 100.00,
-  "fotoUrl": null
-}
-
-### DELETE - baja logica del producto
-DELETE {{host}}/api/productos/3
-
-### NEGOCIO - registrar una venta (descuenta inventario y registra el pago)
-POST {{host}}/api/pedidos
-Content-Type: application/json
-
-{
-  "idCliente": 1,
-  "metodoPago": "PSE",
-  "costoEnvio": 6000.00,
-  "items": [
-    { "idProducto": 1, "cantidad": 3 },
-    { "idProducto": 2, "cantidad": 2 }
-  ]
-}
-
-### NEGOCIO - consultar el pedido registrado
-GET {{host}}/api/pedidos/1
-
-### ERROR esperado 409 - pedir mas de lo disponible
-POST {{host}}/api/pedidos
-Content-Type: application/json
-
-{
-  "idCliente": 1,
-  "metodoPago": "CONTRA_ENTREGA",
-  "costoEnvio": 0,
-  "items": [
-    { "idProducto": 1, "cantidad": 99999 }
-  ]
-}
-
-### ERROR esperado 400 - datos invalidos
+### Publicar un segundo producto
+# @name producto2
 POST {{host}}/api/productos
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
 {
-  "idAgricultor": 1,
-  "idCategoria": 1,
-  "nombre": "",
-  "precio": -100,
-  "unidadMedida": "kg",
-  "stock": 10
-}
-
-### ERROR esperado 404 - el agricultor no existe
-POST {{host}}/api/productos
-Content-Type: application/json
-
-{
-  "idAgricultor": 999,
-  "idCategoria": 1,
-  "nombre": "Banano",
-  "precio": 1800,
-  "unidadMedida": "kg",
-  "stock": 10
-}
-
-### ERROR esperado 409 - un producto no puede cambiar de agricultor
-PUT {{host}}/api/productos/1
-Content-Type: application/json
-
-{
-  "idAgricultor": 2,
+  "idAgricultor": {{idAgricultor}},
   "idCategoria": 1,
   "nombre": "Aguacate Hass",
   "precio": 3500.00,
@@ -171,151 +231,284 @@ Content-Type: application/json
   "stock": 100.00
 }
 
-### CATEGORIA - listar
-GET {{host}}/api/categorias
+###
+@idProducto2 = {{producto2.response.body.id}}
 
-### CATEGORIA - crear
-POST {{host}}/api/categorias
+### Listar todo el catalogo (publico)
+GET {{host}}/api/productos
+
+### Filtrar por categoria y nombre (publico)
+GET {{host}}/api/productos?idCategoria=1&nombre=mango
+
+### Consultar un producto (publico)
+GET {{host}}/api/productos/{{idProducto}}
+
+### Actualizar precio y stock
+PUT {{host}}/api/productos/{{idProducto}}
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
-{ "nombre": "Granos" }
+{
+  "idAgricultor": {{idAgricultor}},
+  "idCategoria": 1,
+  "nombre": "Mango de azucar",
+  "descripcion": "Cosechado en Llanogrande",
+  "precio": 3900.00,
+  "unidadMedida": "kg",
+  "stock": 80.00
+}
 
-### CATEGORIA - renombrar
-PUT {{host}}/api/categorias/5
+### Subir la foto (JPG, PNG o WEBP, hasta 5 MB). Cambie la ruta por una imagen suya
+PUT {{host}}/api/productos/{{idProducto}}/foto
+Authorization: Bearer {{tokenAgricultor}}
+Content-Type: multipart/form-data; boundary=----AgroTech
+
+------AgroTech
+Content-Disposition: form-data; name="archivo"; filename="mango.jpg"
+Content-Type: image/jpeg
+
+< ./ruta/a/una/foto.jpg
+------AgroTech--
+
+### Quitar la foto
+DELETE {{host}}/api/productos/{{idProducto}}/foto
+Authorization: Bearer {{tokenAgricultor}}
+
+### ERROR esperado 400: datos invalidos (con el detalle de cada campo)
+POST {{host}}/api/productos
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
-{ "nombre": "Granos y cereales" }
+{ "idAgricultor": {{idAgricultor}}, "idCategoria": 1, "nombre": "", "precio": -100, "unidadMedida": "kg", "stock": 10 }
 
-### CATEGORIA - ERROR esperado 409: nombre repetido
-POST {{host}}/api/categorias
+### ERROR esperado 400: la foto debe ser un enlace http(s) o una foto subida
+POST {{host}}/api/productos
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
-{ "nombre": "frutas" }
+{ "idAgricultor": {{idAgricultor}}, "idCategoria": 1, "nombre": "Banano", "precio": 1800, "unidadMedida": "kg", "stock": 10, "fotoUrl": "string" }
 
-### CATEGORIA - ERROR esperado 409: tiene productos
-DELETE {{host}}/api/categorias/1
+### ERROR esperado 404: el agricultor no existe (el ADMIN puede publicar a nombre de cualquiera)
+POST {{host}}/api/productos
+Authorization: Bearer {{tokenAdmin}}
+Content-Type: application/json
 
-### CATEGORIA - eliminar (sin productos)
-DELETE {{host}}/api/categorias/5
+{ "idAgricultor": 999, "idCategoria": 1, "nombre": "Banano", "precio": 1800, "unidadMedida": "kg", "stock": 10 }
 
-### CICLO DE VIDA - marcar como pagado (pedido PSE)
-PATCH {{host}}/api/pedidos/1/estado
+###############################################################################
+# 6. VENTAS (comprar: solo el CLIENTE, a su propio nombre)
+###############################################################################
+
+### Registrar una venta (descuenta inventario y registra el pago como PENDIENTE)
+# @name pedido
+POST {{host}}/api/pedidos
+Authorization: Bearer {{tokenCliente}}
+Content-Type: application/json
+
+{
+  "idCliente": {{idCliente}},
+  "metodoPago": "PSE",
+  "costoEnvio": 6000.00,
+  "items": [
+    { "idProducto": {{idProducto}}, "cantidad": 3 }
+  ]
+}
+
+###
+@idPedido = {{pedido.response.body.id}}
+
+### Consultar el pedido (lo ven el cliente, el agricultor que vende y el ADMIN)
+GET {{host}}/api/pedidos/{{idPedido}}
+Authorization: Bearer {{tokenCliente}}
+
+### ERROR esperado 403: un cliente no compra a nombre de otro
+POST {{host}}/api/pedidos
+Authorization: Bearer {{tokenCliente}}
+Content-Type: application/json
+
+{ "idCliente": 999, "metodoPago": "PSE", "items": [ { "idProducto": {{idProducto}}, "cantidad": 1 } ] }
+
+### ERROR esperado 409: pedir mas de lo disponible
+POST {{host}}/api/pedidos
+Authorization: Bearer {{tokenCliente}}
+Content-Type: application/json
+
+{ "idCliente": {{idCliente}}, "metodoPago": "CONTRA_ENTREGA", "items": [ { "idProducto": {{idProducto}}, "cantidad": 99999 } ] }
+
+### ERROR esperado 400: metodo de pago que no existe
+POST {{host}}/api/pedidos
+Authorization: Bearer {{tokenCliente}}
+Content-Type: application/json
+
+{ "idCliente": {{idCliente}}, "metodoPago": "BITCOIN", "items": [ { "idProducto": {{idProducto}}, "cantidad": 1 } ] }
+
+### Ventas del agricultor (pedidos que incluyen sus productos)
+GET {{host}}/api/agricultores/{{idAgricultor}}/pedidos
+Authorization: Bearer {{tokenAgricultor}}
+
+###############################################################################
+# 7. CICLO DE VIDA DEL PEDIDO Y ENTREGA
+# PAGADO y EN_RUTA: el agricultor que vende. ENTREGADO: el transportador asignado.
+# CANCELADO: el cliente o el agricultor. El ADMIN puede hacer cualquier cambio.
+###############################################################################
+
+### Confirmar el pago (pedido PSE)
+PATCH {{host}}/api/pedidos/{{idPedido}}/estado
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
 { "estado": "PAGADO" }
 
-### CICLO DE VIDA - ERROR esperado 409: no se despacha sin entrega programada
-PATCH {{host}}/api/pedidos/1/estado
+### ERROR esperado 409: no se despacha sin entrega programada
+PATCH {{host}}/api/pedidos/{{idPedido}}/estado
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
 { "estado": "EN_RUTA" }
 
-### ENTREGA - programar (sin direccion: usa la del cliente). Ajuste la fecha a hoy o despues
-POST {{host}}/api/pedidos/1/entrega
+### Transportadores disponibles para asignar (AGRICULTOR o ADMIN)
+GET {{host}}/api/transportadores
+Authorization: Bearer {{tokenAgricultor}}
+
+### Programar la entrega (sin direccion: usa la del cliente). Ajuste la fecha a hoy o despues
+POST {{host}}/api/pedidos/{{idPedido}}/entrega
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
-{
-  "idTransportador": 1,
-  "fechaProgramada": "2026-12-01"
-}
+{ "idTransportador": {{idTransportador}}, "fechaProgramada": "2026-12-15" }
 
-### ENTREGA - ERROR esperado 409: el pedido ya tiene entrega
-POST {{host}}/api/pedidos/1/entrega
+### ERROR esperado 409: el pedido ya tiene entrega
+POST {{host}}/api/pedidos/{{idPedido}}/entrega
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
-{ "idTransportador": 1, "fechaProgramada": "2026-12-01" }
+{ "idTransportador": {{idTransportador}}, "fechaProgramada": "2026-12-15" }
 
-### ENTREGA - ERROR esperado 400: fecha en el pasado
-POST {{host}}/api/pedidos/1/entrega
+### ERROR esperado 400: fecha en el pasado
+POST {{host}}/api/pedidos/{{idPedido}}/entrega
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
-{ "idTransportador": 1, "fechaProgramada": "2020-01-01" }
+{ "idTransportador": {{idTransportador}}, "fechaProgramada": "2020-01-01" }
 
-### CICLO DE VIDA - despachar (la entrega pasa a EN_RUTA)
-PATCH {{host}}/api/pedidos/1/estado
+### Despachar (la entrega pasa a EN_RUTA)
+PATCH {{host}}/api/pedidos/{{idPedido}}/estado
+Authorization: Bearer {{tokenAgricultor}}
 Content-Type: application/json
 
 { "estado": "EN_RUTA" }
 
-### CICLO DE VIDA - entregar (la entrega queda ENTREGADA con fecha)
-PATCH {{host}}/api/pedidos/1/estado
+### ERROR esperado 403: solo el transportador asignado marca la entrega
+PATCH {{host}}/api/pedidos/{{idPedido}}/estado
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
 { "estado": "ENTREGADO" }
 
-### ENTREGA - consultar la entrega del pedido
-GET {{host}}/api/pedidos/1/entrega
+### Agenda del transportador
+GET {{host}}/api/transportadores/{{idTransportador}}/entregas
+Authorization: Bearer {{tokenTransportador}}
 
-### ENTREGA - agenda del transportador, opcionalmente por estado
-GET {{host}}/api/transportadores/1/entregas?estado=ENTREGADA
+### Entregar (la entrega queda ENTREGADA con fecha)
+PATCH {{host}}/api/pedidos/{{idPedido}}/estado
+Authorization: Bearer {{tokenTransportador}}
+Content-Type: application/json
 
-### CICLO DE VIDA - ERROR esperado 409: un pedido entregado no se cancela
-PATCH {{host}}/api/pedidos/1/estado
+{ "estado": "ENTREGADO" }
+
+### Consultar la entrega del pedido
+GET {{host}}/api/pedidos/{{idPedido}}/entrega
+Authorization: Bearer {{tokenCliente}}
+
+### Agenda filtrada por estado
+GET {{host}}/api/transportadores/{{idTransportador}}/entregas?estado=ENTREGADA
+Authorization: Bearer {{tokenTransportador}}
+
+### ERROR esperado 409: un pedido entregado no se cancela
+PATCH {{host}}/api/pedidos/{{idPedido}}/estado
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
 { "estado": "CANCELADO" }
 
-### CICLO DE VIDA - pedido contra entrega (se despacha sin pagar y se cobra al entregar)
+### Pedido contra entrega (se despacha sin pagar y se cobra al entregar)
+# @name pedido2
 POST {{host}}/api/pedidos
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
-{
-  "idCliente": 1,
-  "metodoPago": "CONTRA_ENTREGA",
-  "items": [ { "idProducto": 2, "cantidad": 1 } ]
-}
+{ "idCliente": {{idCliente}}, "metodoPago": "CONTRA_ENTREGA", "items": [ { "idProducto": {{idProducto2}}, "cantidad": 1 } ] }
 
-### CICLO DE VIDA - cancelar devuelve el inventario (crear y luego cancelar)
-PATCH {{host}}/api/pedidos/2/estado
+### El cliente cancela: el inventario vuelve al catalogo
+PATCH {{host}}/api/pedidos/{{pedido2.response.body.id}}/estado
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
 { "estado": "CANCELADO" }
 
-### HISTORIAL - pedidos del cliente, del mas reciente al mas antiguo
-GET {{host}}/api/pedidos?idCliente=1
+###############################################################################
+# 8. HISTORIAL
+###############################################################################
 
-### HISTORIAL - solo los entregados
-GET {{host}}/api/pedidos?idCliente=1&estado=ENTREGADO
+### Compras del cliente, de la mas reciente a la mas antigua
+GET {{host}}/api/pedidos?idCliente={{idCliente}}
+Authorization: Bearer {{tokenCliente}}
 
-### HISTORIAL - ERROR esperado 404: el cliente no existe
+### Solo las entregadas
+GET {{host}}/api/pedidos?idCliente={{idCliente}}&estado=ENTREGADO
+Authorization: Bearer {{tokenCliente}}
+
+### Todos los pedidos (solo ADMIN)
+GET {{host}}/api/pedidos
+Authorization: Bearer {{tokenAdmin}}
+
+### ERROR esperado 404: el cliente no existe (el ADMIN puede consultar cualquiera)
 GET {{host}}/api/pedidos?idCliente=999
+Authorization: Bearer {{tokenAdmin}}
 
-### RESENA - calificar un producto recibido (el pedido 1 fue ENTREGADO)
-POST {{host}}/api/productos/1/resenas
+###############################################################################
+# 9. RESENAS (resenar: el CLIENTE, solo lo que recibio y una vez por producto)
+###############################################################################
+
+### Calificar un producto recibido (el pedido quedo ENTREGADO)
+POST {{host}}/api/productos/{{idProducto}}/resenas
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
-{ "idCliente": 1, "calificacion": 5, "comentario": "Llego fresco y bien empacado" }
+{ "idCliente": {{idCliente}}, "calificacion": 5, "comentario": "Llego fresco y bien empacado" }
 
-### RESENA - ERROR esperado 409: el cliente ya reseno este producto
-POST {{host}}/api/productos/1/resenas
+### ERROR esperado 409: el cliente ya reseno este producto
+POST {{host}}/api/productos/{{idProducto}}/resenas
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
-{ "idCliente": 1, "calificacion": 4 }
+{ "idCliente": {{idCliente}}, "calificacion": 4 }
 
-### RESENA - ERROR esperado 409: el cliente no ha recibido este producto
-POST {{host}}/api/productos/3/resenas
+### ERROR esperado 409: el cliente no ha recibido este producto (el segundo pedido se cancelo)
+POST {{host}}/api/productos/{{idProducto2}}/resenas
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
-{ "idCliente": 1, "calificacion": 5 }
+{ "idCliente": {{idCliente}}, "calificacion": 5 }
 
-### RESENA - ERROR esperado 400: calificacion fuera de 1 a 5
-POST {{host}}/api/productos/1/resenas
+### ERROR esperado 400: calificacion fuera de 1 a 5
+POST {{host}}/api/productos/{{idProducto}}/resenas
+Authorization: Bearer {{tokenCliente}}
 Content-Type: application/json
 
-{ "idCliente": 1, "calificacion": 6 }
+{ "idCliente": {{idCliente}}, "calificacion": 6 }
 
-### RESENA - resenas del producto con su promedio
-GET {{host}}/api/productos/1/resenas
+### Resenas del producto con su promedio (publico)
+GET {{host}}/api/productos/{{idProducto}}/resenas
 
-### RESENA - resenas escritas por el cliente (relacion @OneToMany)
-GET {{host}}/api/clientes/1/resenas
+### Resenas escritas por el cliente (las ve el propio cliente o el ADMIN)
+GET {{host}}/api/clientes/{{idCliente}}/resenas
+Authorization: Bearer {{tokenCliente}}
 
-### ERROR esperado 400 - metodo de pago que no existe
-POST {{host}}/api/pedidos
-Content-Type: application/json
+###############################################################################
+# 10. BAJA DEL PRODUCTO
+###############################################################################
 
-{
-  "idCliente": 1,
-  "metodoPago": "BITCOIN",
-  "items": [ { "idProducto": 1, "cantidad": 1 } ]
-}
+### Baja logica: deja de estar disponible en el catalogo
+DELETE {{host}}/api/productos/{{idProducto2}}
+Authorization: Bearer {{tokenAgricultor}}

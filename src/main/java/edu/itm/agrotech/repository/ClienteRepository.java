@@ -16,4 +16,8 @@ public interface ClienteRepository extends JpaRepository<Cliente, Long> {
     /** Cliente con su usuario y sus resenas (relacion @OneToMany) ya cargados. */
     @Query("SELECT c FROM Cliente c JOIN FETCH c.usuario LEFT JOIN FETCH c.resenas WHERE c.id = :id")
     Optional<Cliente> buscarConResenas(@Param("id") Long id);
+
+    /** Id del perfil de cliente de un usuario (se usa al iniciar sesion). */
+    @Query("SELECT c.id FROM Cliente c WHERE c.usuario.id = :idUsuario")
+    Optional<Long> buscarIdPorUsuario(@Param("idUsuario") Long idUsuario);
 }

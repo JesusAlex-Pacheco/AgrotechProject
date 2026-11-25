@@ -16,4 +16,8 @@ public interface AgricultorRepository extends JpaRepository<Agricultor, Long> {
     /** Trae el agricultor con su usuario en una sola consulta (JOIN FETCH). */
     @Query("SELECT a FROM Agricultor a JOIN FETCH a.usuario WHERE a.id = :id")
     Optional<Agricultor> buscarConUsuario(@Param("id") Long id);
+
+    /** Id del perfil de agricultor de un usuario (se usa al iniciar sesion). */
+    @Query("SELECT a.id FROM Agricultor a WHERE a.usuario.id = :idUsuario")
+    Optional<Long> buscarIdPorUsuario(@Param("idUsuario") Long idUsuario);
 }

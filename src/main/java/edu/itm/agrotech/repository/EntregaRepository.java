@@ -16,6 +16,10 @@ public interface EntregaRepository extends JpaRepository<Entrega, Long> {
 
     Optional<Entrega> findByIdPedido(Long idPedido);
 
+    /** Id del transportador asignado a la entrega del pedido (se usa en el control de acceso). */
+    @Query("SELECT e.transportador.id FROM Entrega e WHERE e.idPedido = :idPedido")
+    Optional<Long> buscarIdTransportadorPorPedido(@Param("idPedido") Long idPedido);
+
     /** Entrega del pedido con su transportador y el usuario de este ya cargados. */
     @Query("""
             SELECT e FROM Entrega e

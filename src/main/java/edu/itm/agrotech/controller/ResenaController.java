@@ -3,6 +3,7 @@ package edu.itm.agrotech.controller;
 import edu.itm.agrotech.dto.ResenaRequest;
 import edu.itm.agrotech.dto.ResenaResponse;
 import edu.itm.agrotech.dto.ResenasProductoResponse;
+import edu.itm.agrotech.security.ControlAcceso;
 import edu.itm.agrotech.service.ResenaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -27,22 +28,27 @@ import java.util.List;
 public class ResenaController {
 
     private final ResenaService resenaService;
+    private final ControlAcceso acceso;
 
-    public ResenaController(ResenaService resenaService) {
+    public ResenaController(ResenaService resenaService, ControlAcceso acceso) {
         this.resenaService = resenaService;
+        this.acceso = acceso;
     }
 
     @PostMapping("/productos/{idProducto}/resenas")
     @Operation(summary = "Resenar un producto",
             description = "Califica de 1 a 5 un producto. Solo si el cliente lo recibio en un pedido ENTREGADO, "
-                    + "y una sola vez por producto.")
+                    + "y una sola vez por producto. Requiere sesion de CLIENTE y solo resena a su propio nombre.")
     @ApiResponse(responseCode = "201", description = "Resena registrada")
     @ApiResponse(responseCode = "400", description = "Datos invalidos o calificacion fuera de 1 a 5")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "No es cliente o resena a nombre de otro")
     @ApiResponse(responseCode = "404", description = "El producto o el cliente no existen")
     @ApiResponse(responseCode = "409", description = "El cliente no ha recibido el producto o ya lo reseno")
     public ResponseEntity<ResenaResponse> registrar(
             @Parameter(description = "Id del producto", example = "1") @PathVariable("idProducto") Long idProducto,
             @Valid @RequestBody ResenaRequest solicitud) {
+        acceso.exigirCliente(solicitud.idCliente());
         ResenaResponse respuesta = ResenaResponse.desde(resenaService.registrar(idProducto, solicitud));
         return ResponseEntity.created(URI.create("/api/productos/" + idProducto + "/resenas")).body(respuesta);
     }
@@ -60,11 +66,14 @@ public class ResenaController {
 
     @GetMapping("/clientes/{idCliente}/resenas")
     @Operation(summary = "Resenas escritas por un cliente",
-            description = "De la mas reciente a la mas antigua.")
+            description = "De la mas reciente a la mas antigua. Las consulta el propio cliente o el ADMIN.")
     @ApiResponse(responseCode = "200", description = "Resenas del cliente (puede no tener)")
+    @ApiResponse(responseCode = "401", description = "No hay sesion")
+    @ApiResponse(responseCode = "403", description = "Son las resenas de otro cliente")
     @ApiResponse(responseCode = "404", description = "El cliente no existe")
     public ResponseEntity<List<ResenaResponse>> listarPorCliente(
             @Parameter(description = "Id del cliente", example = "1") @PathVariable("idCliente") Long idCliente) {
+        acceso.exigirClienteOAdmin(idCliente);
         return ResponseEntity.ok(resenaService.listarPorCliente(idCliente)
                 .stream()
                 .map(ResenaResponse::desde)

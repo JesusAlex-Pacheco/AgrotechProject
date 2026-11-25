@@ -7,6 +7,9 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -14,6 +17,9 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.LinkedHashMap;
@@ -41,6 +47,34 @@ public class ManejadorGlobalErrores {
     @ExceptionHandler(ReglaNegocioException.class)
     public ResponseEntity<ErrorResponse> reglaNegocio(ReglaNegocioException ex) {
         return responder(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(CredencialesInvalidasException.class)
+    public ResponseEntity<ErrorResponse> credencialesInvalidas(CredencialesInvalidasException ex) {
+        return responder(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    }
+
+    // ---------------------------------------------------------------
+    // Seguridad: llegan desde los controladores (ControlAcceso) o desde
+    // los filtros de Spring Security a traves de ErroresDeSeguridad.
+    // ---------------------------------------------------------------
+
+    /** Sin token, o con uno vencido o alterado. */
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ErrorResponse> noAutenticado(AuthenticationException ex) {
+        String mensaje = ex instanceof OAuth2AuthenticationException
+                ? "La sesion expiro o no es valida. Inicie sesion de nuevo"
+                : "Debe iniciar sesion para realizar esta accion";
+        return responder(HttpStatus.UNAUTHORIZED, mensaje);
+    }
+
+    /** Con sesion, pero sin el rol o sin ser el dueno del recurso. */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> sinPermiso(AccessDeniedException ex) {
+        String mensaje = ex instanceof AccesoDenegadoException
+                ? ex.getMessage()
+                : "Su rol no tiene permiso para realizar esta accion";
+        return responder(HttpStatus.FORBIDDEN, mensaje);
     }
 
     /**
@@ -73,6 +107,24 @@ public class ManejadorGlobalErrores {
         return responder(HttpStatus.BAD_REQUEST, "El cuerpo de la solicitud no es valido: "
                 + "revise el formato JSON y que los campos de lista fija (estado, metodoPago) "
                 + "usen uno de los valores permitidos");
+    }
+
+    /** Foto vacia o con un formato que no es imagen. */
+    @ExceptionHandler(ArchivoInvalidoException.class)
+    public ResponseEntity<ErrorResponse> archivoInvalido(ArchivoInvalidoException ex) {
+        return responder(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    /** Foto mas pesada que spring.servlet.multipart.max-file-size. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> archivoMuyGrande(MaxUploadSizeExceededException ex) {
+        return responder(HttpStatus.CONTENT_TOO_LARGE, "La foto no puede pesar mas de 5 MB");
+    }
+
+    /** Se esperaba un archivo (multipart/form-data) y no llego. */
+    @ExceptionHandler({MissingServletRequestPartException.class, MultipartException.class})
+    public ResponseEntity<ErrorResponse> archivoFaltante(Exception ex) {
+        return responder(HttpStatus.BAD_REQUEST, "Debe adjuntar la foto en el campo 'archivo'");
     }
 
     /** Un parametro de la URL con el tipo equivocado, por ejemplo /api/productos/abc. */

@@ -10,6 +10,7 @@ import edu.itm.agrotech.dto.ItemPedidoRequest;
 import edu.itm.agrotech.dto.PedidoRequest;
 import edu.itm.agrotech.exception.RecursoNoEncontradoException;
 import edu.itm.agrotech.exception.ReglaNegocioException;
+import edu.itm.agrotech.repository.AgricultorRepository;
 import edu.itm.agrotech.repository.ClienteRepository;
 import edu.itm.agrotech.repository.PedidoRepository;
 import edu.itm.agrotech.repository.ProductoRepository;
@@ -48,6 +49,8 @@ class PedidoServiceImplTest {
     @Mock
     private ClienteRepository clienteRepository;
     @Mock
+    private AgricultorRepository agricultorRepository;
+    @Mock
     private SeguimientoPedido seguimiento;
 
     private PedidoServiceImpl servicio;
@@ -55,7 +58,7 @@ class PedidoServiceImplTest {
     @BeforeEach
     void preparar() {
         servicio = new PedidoServiceImpl(pedidoRepository, productoRepository, clienteRepository,
-                List.of(seguimiento));
+                agricultorRepository, List.of(seguimiento));
     }
 
     @Nested
@@ -280,6 +283,41 @@ class PedidoServiceImplTest {
 
             assertThat(servicio.listarPorCliente(1L, EstadoPedido.ENTREGADO)).isEmpty();
             verify(pedidoRepository).listarPorCliente(eq(1L), eq(EstadoPedido.ENTREGADO));
+        }
+    }
+
+    @Nested
+    @DisplayName("Pedidos del agricultor y del administrador")
+    class OtrosListados {
+
+        @Test
+        @DisplayName("Rechaza un agricultor que no existe")
+        void agricultorInexistente() {
+            when(agricultorRepository.existsById(99L)).thenReturn(false);
+
+            assertThatThrownBy(() -> servicio.listarPorAgricultor(99L, null))
+                    .isInstanceOf(RecursoNoEncontradoException.class)
+                    .hasMessageContaining("99");
+            verify(pedidoRepository, never()).listarPorAgricultor(any(), any());
+        }
+
+        @Test
+        @DisplayName("Lista los pedidos con productos del agricultor, con el filtro de estado")
+        void listaPorAgricultor() {
+            Pedido pedido = pedidoEn(EstadoPedido.CREADO, MetodoPago.PSE);
+            when(agricultorRepository.existsById(2L)).thenReturn(true);
+            when(pedidoRepository.listarPorAgricultor(2L, EstadoPedido.CREADO)).thenReturn(List.of(pedido));
+
+            assertThat(servicio.listarPorAgricultor(2L, EstadoPedido.CREADO)).containsExactly(pedido);
+        }
+
+        @Test
+        @DisplayName("El listado general delega en el repositorio")
+        void listaTodos() {
+            when(pedidoRepository.listarTodos(null)).thenReturn(List.of());
+
+            assertThat(servicio.listarTodos(null)).isEmpty();
+            verify(pedidoRepository).listarTodos(null);
         }
     }
 

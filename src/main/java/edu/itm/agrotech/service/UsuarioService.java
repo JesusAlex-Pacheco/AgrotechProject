@@ -1,11 +1,14 @@
 package edu.itm.agrotech.service;
 
+import edu.itm.agrotech.domain.SesionUsuario;
 import edu.itm.agrotech.dto.RegistroAgricultorRequest;
 import edu.itm.agrotech.dto.RegistroClienteRequest;
 import edu.itm.agrotech.dto.RegistroTransportadorRequest;
 import edu.itm.agrotech.entity.Agricultor;
 import edu.itm.agrotech.entity.Cliente;
 import edu.itm.agrotech.entity.Transportador;
+
+import java.util.List;
 
 /**
  * Contrato de negocio del registro de usuarios por rol. Cada registro crea
@@ -30,4 +33,15 @@ public interface UsuarioService {
 
     /** @throws edu.itm.agrotech.exception.RecursoNoEncontradoException si no existe */
     Transportador consultarTransportador(Long id);
+
+    /** Todos los transportadores con su usuario, por nombre, para asignarlos a una entrega. */
+    List<Transportador> listarTransportadores();
+
+    /**
+     * Verifica el correo y la clave y devuelve el usuario con el id de su perfil.
+     *
+     * @throws edu.itm.agrotech.exception.CredencialesInvalidasException si el correo
+     *         no existe o la clave no coincide
+     */
+    SesionUsuario iniciarSesion(String correo, String clave);
 }

@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -43,7 +44,12 @@ public record ProductoRequest(
         @DecimalMin(value = "0.0", message = "El stock no puede ser negativo")
         BigDecimal stock,
 
-        @Schema(description = "Enlace a una foto del producto (opcional)")
+        @Schema(description = "Foto del producto (opcional). Lo normal es subirla con PUT /api/productos/{id}/foto; "
+                + "aqui se conserva la que ya tiene o se indica un enlace externo https://",
+                example = "https://ejemplo.com/mango.jpg")
+        @Size(max = 300, message = "El enlace de la foto no puede superar 300 caracteres")
+        @Pattern(regexp = "^(https?://|/api/fotos/).+",
+                message = "La foto debe ser un enlace http(s):// o una foto subida a AgroTech")
         String fotoUrl
 ) {
 }
